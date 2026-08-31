@@ -3,22 +3,21 @@ import plotly.express as px
 import streamlit as st
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA RESPONSIVA Y PREMIUM DARK MODE
+# CONFIGURACIÓN DE PÁGINA RESPONSIVA Y DARK MODE
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Executive Dashboard - Costos & Margen",
+    page_title="Executive Dashboard - Costos & Ventas",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS AVANZADOS (INTERFAZ MODERNA & CONTRASTE)
+# ESTILOS CSS AVANZADOS (DARK MODE & TABLAS ELEGANTES)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Fondo General Dark Mode */
         .stApp {
             background-color: #0B0E14;
             color: #E2E8F0;
@@ -31,7 +30,6 @@ st.markdown(
             padding-right: 1.5rem !important;
         }
 
-        /* Banner Informativo de Mes */
         .month-banner {
             background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%);
             border-left: 4px solid #38BDF8;
@@ -45,7 +43,6 @@ st.markdown(
             color: #38BDF8;
         }
 
-        /* Tarjeta KPI Premium */
         .kpi-card {
             background: linear-gradient(135deg, #1E293B 0%, #111827 100%);
             border: 1px solid #334155;
@@ -82,7 +79,6 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        /* Estilizado de Dataframes/Tablas Dark Mode */
         [data-testid="stDataFrame"] {
             background-color: #1E293B !important;
             border-radius: 8px;
@@ -90,7 +86,6 @@ st.markdown(
             padding: 6px;
         }
 
-        /* Sidebar Styling */
         section[data-testid="stSidebar"] {
             background-color: #0F172A;
             border-right: 1px solid #1E293B;
@@ -102,7 +97,7 @@ st.markdown(
 
 
 # ---------------------------------------------------------
-# CARGA Y PREPROCESAMIENTO DE DATOS CON MES DE VENTA
+# CARGA Y PREPROCESAMIENTO DE DATOS
 # ---------------------------------------------------------
 @st.cache_data
 def load_data():
@@ -110,29 +105,17 @@ def load_data():
     df_receta = pd.read_excel("RECETA.xlsx")
     df_precios = pd.read_excel("PRECIOS.xlsx")
 
-    # Estandarizar nombre de columna
+    # Renombrar código de producto si aplica
     df_ventas.rename(columns={"ART": "Cod. Venta"}, inplace=True)
 
-    # Convertir Fechas y extraer 'Mes_Venta' (YYYY-MM)
+    # Extraer formato de fecha/mes
     if "FECHA" in df_ventas.columns:
         df_ventas["FECHA"] = pd.to_datetime(df_ventas["FECHA"], errors="coerce")
         df_ventas["Mes_Venta"] = df_ventas["FECHA"].dt.strftime("%Y-%m")
     else:
         df_ventas["Mes_Venta"] = "Sin Fecha"
 
-    if "Mes" in df_receta.columns:
-        df_receta["Mes"] = pd.to_datetime(df_receta["Mes"], errors="coerce")
-        df_receta["Mes_Str"] = df_receta["Mes"].dt.strftime("%Y-%m")
-    else:
-        df_receta["Mes_Str"] = "Sin Fecha"
-
-    if "Mes" in df_precios.columns:
-        df_precios["Mes"] = pd.to_datetime(df_precios["Mes"], errors="coerce")
-        df_precios["Mes_Str"] = df_precios["Mes"].dt.strftime("%Y-%m")
-    else:
-        df_precios["Mes_Str"] = "Sin Fecha"
-
-    # Conversiones numéricas
+    # Conversión numérica
     for df in [df_ventas, df_receta]:
         df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
 
@@ -143,6 +126,14 @@ def load_data():
 
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
     df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
+
+    # Asegurar columna TOTAL INSUMOS
+    if "TOTAL INSUMOS" not in df_ventas.columns:
+        df_ventas["TOTAL INSUMOS"] = 0.0
+    else:
+        df_ventas["TOTAL INSUMOS"] = pd.to_numeric(
+            df_ventas["TOTAL INSUMOS"], errors="coerce"
+        ).fillna(0.0)
 
     # Cruce Receta + Precios
     receta_precios = pd.merge(
@@ -161,7 +152,6 @@ def load_data():
 df_ventas, df_receta, df_precios, receta_precios = load_data()
 
 
-# Componente HTML para KPIs
 def draw_kpi(title, value, sub="", color_class=""):
     val_class = f"kpi-value {color_class}".strip()
     sub_html = f'<div class="kpi-sub">{sub}</div>' if sub else ""
@@ -175,7 +165,7 @@ def draw_kpi(title, value, sub="", color_class=""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def truncate_text(text, max_len=28):
+def truncate_text(text, max_len=26):
     text = str(text)
     return text[:max_len] + "..." if len(text) > max_len else text
 
@@ -183,7 +173,7 @@ def truncate_text(text, max_len=28):
 plotly_config = {"responsive": True, "displayModeBar": False}
 
 # ---------------------------------------------------------
-# SIDEBAR / NAVEGACIÓN Y FILTRO POR MES
+# SIDEBAR / FILTROS DE MES Y LOCACIÓN-SAP
 # ---------------------------------------------------------
 st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
@@ -192,30 +182,44 @@ vista = st.sidebar.radio(
 )
 
 st.sidebar.divider()
-st.sidebar.header("🗓️ Filtro de Período")
+st.sidebar.header("🗓️ Filtros Globales")
 
-# Obtener meses disponibles
+# 1. Filtro Mes
 meses_disponibles = sorted(
     list(set(df_ventas["Mes_Venta"].dropna().unique()))
 )
-if not meses_disponibles or meses_disponibles == ["Sin Fecha"]:
-    meses_disponibles = ["Todos los Meses"]
+opciones_mes = ["Todos los Meses"] + [m for m in meses_disponibles if m != ""]
+mes_seleccionado = st.sidebar.selectbox("Mes de Venta:", opciones_mes)
 
-opciones_mes = ["Todos los Meses"] + [
-    m for m in meses_disponibles if m != "Todos los Meses"
-]
-mes_seleccionado = st.sidebar.selectbox("Mes de Venta / Costos:", opciones_mes)
+# 2. Filtro Locación SAP
+locaciones_disponibles = sorted(
+    [
+        str(loc)
+        for loc in df_ventas["LOCACION - SAP"].dropna().unique()
+        if str(loc).strip() != ""
+    ]
+)
+opciones_locacion = ["Todas las Locaciones"] + locaciones_disponibles
+locacion_seleccionada = st.sidebar.selectbox(
+    "Locación - SAP:", opciones_locacion
+)
 
-# Filtrado de Ventas por Mes
+# Aplicar Filtros Globales a Ventas
+df_ventas_filt = df_ventas.copy()
 if mes_seleccionado != "Todos los Meses":
-    df_ventas_filt = df_ventas[df_ventas["Mes_Venta"] == mes_seleccionado]
-else:
-    df_ventas_filt = df_ventas.copy()
+    df_ventas_filt = df_ventas_filt[
+        df_ventas_filt["Mes_Venta"] == mes_seleccionado
+    ]
+
+if locacion_seleccionada != "Todas las Locaciones":
+    df_ventas_filt = df_ventas_filt[
+        df_ventas_filt["LOCACION - SAP"] == locacion_seleccionada
+    ]
 
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-    st.sidebar.header("📦 Filtro de Producto")
+    st.sidebar.header("📦 Seleccionar Producto")
 
     articulos_df = (
         df_receta[["Cod. Venta", "Artículo"]]
@@ -233,12 +237,13 @@ if vista == "🔎 Análisis por Producto":
     cod_art = opciones_dict[item_seleccionado]
     nombre_art = item_seleccionado.split(" - ")[1]
 
-    # Receta e Insumos
+    # Datos Receta Teórica por Producto
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
-    costo_unitario = receta_prod["Costo Insumo ($)"].sum()
+    costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
 
-    # Ventas filtradas
+    # Ventas filtradas del Producto
     ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
+
     volumen_unid = (
         ventas_prod["Físicos"].sum() if "Físicos" in ventas_prod.columns else 0
     )
@@ -253,8 +258,10 @@ if vista == "🔎 Análisis por Producto":
         else 0
     )
 
-    costo_total_prod = costo_unitario * volumen_unid
-    contribucion_marg = fact_neta - costo_total_prod
+    # COSTO DE INSUMOS DIRECTO DE LA COLUMNA DE VENTAS EXCEL
+    costo_insumos_excel = ventas_prod["TOTAL INSUMOS"].sum()
+
+    contribucion_marg = fact_neta - costo_insumos_excel
     pct_margen = (
         (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
     )
@@ -262,48 +269,46 @@ if vista == "🔎 Análisis por Producto":
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
 
     # ---------------------------------------------------------
-    # HEADER Y BANNER DE MES DE VENTA
+    # ENCABEZADO Y KPIS CORREGIDOS
     # ---------------------------------------------------------
     st.title(f"📦 {nombre_art}")
 
-    # Banner con el mes explícito
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Período Evaluado: <strong>Mes de Venta {mes_seleccionado}</strong> | Código de Venta: <strong>{cod_art}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Código SAP: <strong>{cod_art}</strong>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown("### 🚀 Indicadores Clave (KPIs)")
-
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
+        draw_kpi("Facturación Neta", f"${fact_neta:,.2f}")
+    with col2:
+        # COSTO DE INSUMOS COINCIDENTE CON EXCEL DE VENTAS
         draw_kpi(
-            "Costo Teórico Unit.",
-            f"${costo_unitario:,.2f}",
+            "Costo de Insumos",
+            f"${costo_insumos_excel:,.2f}",
             color_class="kpi-warning",
         )
-    with col2:
+    with col3:
+        draw_kpi(
+            "Margen Contribución",
+            f"{pct_margen:.1f}%",
+            sub=f"+${contribucion_marg:,.0f}",
+        )
+    with col4:
         draw_kpi(
             "Volumen Vendido",
             f"{volumen_unid:,.0f} u.",
             color_class="kpi-neutral",
         )
-    with col3:
-        draw_kpi("Facturación Neta", f"${fact_neta:,.2f}")
-    with col4:
-        draw_kpi(
-            "Costo Total Prod.",
-            f"${costo_total_prod:,.2f}",
-            color_class="kpi-warning",
-        )
     with col5:
         draw_kpi(
-            "Margen Contribución",
-            f"{pct_margen:.1f}%",
-            sub=f"+${contribucion_marg:,.0f}",
+            "Costo Teórico Unit.",
+            f"${costo_unitario_teorico:,.2f}",
+            color_class="kpi-warning",
         )
 
     col6, col7, col8, col9 = st.columns(4)
@@ -331,10 +336,13 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS INTERACTIVOS
+    # GRÁFICOS CON SUMATORIAS E IMPORTES TOTALES
     # ---------------------------------------------------------
-    st.markdown("### 📊 Composición y Distribución de Costos")
+    st.markdown("### 📊 Composición de Insumos e Importes Totales")
     col_g1, col_g2 = st.columns([3, 2])
+
+    # Sumatoria total del gráfico actual
+    total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
     with col_g1:
         if not receta_prod.empty:
@@ -342,7 +350,7 @@ if vista == "🔎 Análisis por Producto":
                 "Costo Insumo ($)", ascending=True
             ).copy()
             df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
-                lambda x: truncate_text(x, 28)
+                lambda x: truncate_text(x, 26)
             )
 
             fig_bar = px.bar(
@@ -354,7 +362,7 @@ if vista == "🔎 Análisis por Producto":
                 template="plotly_dark",
                 color="Costo Insumo ($)",
                 color_continuous_scale="Viridis",
-                title="Ranking de Insumos por Costo ($)",
+                title=f"Desglose por Insumo (Total Receta Unit.: ${total_costo_grafico:,.2f})",
             )
             fig_bar.update_traces(
                 texttemplate="$%{x:,.2f}", textposition="outside"
@@ -374,23 +382,32 @@ if vista == "🔎 Análisis por Producto":
             )
 
     with col_g2:
-        if not receta_prod.empty and costo_unitario > 0:
+        if not receta_prod.empty and total_costo_grafico > 0:
             receta_prod_copy = receta_prod.copy()
             receta_prod_copy["Insumo_Label"] = receta_prod_copy[
                 "Descripción"
-            ].apply(lambda x: truncate_text(x, 20))
+            ].apply(lambda x: truncate_text(x, 18))
 
             fig_pie = px.pie(
                 receta_prod_copy,
                 names="Insumo_Label",
                 values="Costo Insumo ($)",
-                hole=0.45,
+                hole=0.48,
                 template="plotly_dark",
                 color_discrete_sequence=px.colors.qualitative.Bold,
-                title="Distribución % Insumos",
+                title="Distribución Percentual de Costos",
             )
             fig_pie.update_traces(
                 textposition="inside", textinfo="percent+label"
+            )
+            # Anotación central con el importe total
+            fig_pie.add_annotation(
+                text=f"<b>Total</b><br>${total_costo_grafico:,.2f}",
+                x=0.5,
+                y=0.5,
+                font_size=13,
+                showarrow=False,
+                font_color="#38BDF8",
             )
             fig_pie.update_layout(
                 showlegend=False,
@@ -406,12 +423,12 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM) Y BARRAS DE IMPACTO
+    # TABLA DESGLOSE (BOM) CON FILA DE SUMATORIA TOTAL
     # ---------------------------------------------------------
     col_t1, col_t2 = st.columns([3, 2])
 
     with col_t1:
-        st.markdown("### 📋 Desglose de Receta (BOM)")
+        st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
         tabla_out = receta_prod[
             [
                 "Código Insumo",
@@ -422,8 +439,8 @@ if vista == "🔎 Análisis por Producto":
             ]
         ].copy()
         tabla_out["% Part."] = (
-            tabla_out["Costo Insumo ($)"] / costo_unitario * 100
-            if costo_unitario > 0
+            tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100
+            if total_costo_grafico > 0
             else 0
         )
         tabla_out.columns = [
@@ -435,27 +452,48 @@ if vista == "🔎 Análisis por Producto":
             "% Participación",
         ]
 
-        st.dataframe(
-            tabla_out.style.format(
+        # Convertir a texto formateado y agregar Fila TOTAL
+        tabla_out_formatted = tabla_out.copy()
+        tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
+            "Cant. Teórica"
+        ].apply(lambda x: f"{x:,.4f}")
+        tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted[
+            "Precio Unit. ($)"
+        ].apply(lambda x: f"${x:,.2f}")
+        tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(
+            lambda x: f"${x:,.2f}"
+        )
+        tabla_out_formatted["% Participación"] = tabla_out_formatted[
+            "% Participación"
+        ].apply(lambda x: f"{x:.1f}%")
+
+        # Fila Total
+        fila_total = pd.DataFrame(
+            [
                 {
-                    "Cant. Teórica": "{:,.4f}",
-                    "Precio Unit. ($)": "${:,.2f}",
-                    "Costo ($)": "${:,.2f}",
-                    "% Participación": "{:.1f}%",
+                    "Cód. Insumo": "TOTAL",
+                    "Insumo": "SUMATORIA TOTAL RECURSOS",
+                    "Cant. Teórica": "-",
+                    "Precio Unit. ($)": "-",
+                    "Costo ($)": f"${total_costo_grafico:,.2f}",
+                    "% Participación": "100.0%",
                 }
-            ),
-            use_container_width=True,
-            height=340,
+            ]
         )
 
+        tabla_final = pd.concat(
+            [tabla_out_formatted, fila_total], ignore_index=True
+        )
+        st.dataframe(tabla_final, use_container_width=True, height=340)
+
     with col_t2:
-        st.markdown("### 📊 Contribución al Costo Total")
+        st.markdown("### 📊 Contribución Acumulada")
         if not receta_prod.empty:
             df_flujo = receta_prod.sort_values(
                 "Costo Insumo ($)", ascending=True
             ).copy()
             df_flujo["Insumo_Corto"] = df_flujo["Descripción"].apply(
-                lambda x: truncate_text(x, 24)
+                lambda x: truncate_text(x, 22)
             )
 
             fig_flujo = px.bar(
@@ -467,17 +505,18 @@ if vista == "🔎 Análisis por Producto":
                 template="plotly_dark",
                 color="Costo Insumo ($)",
                 color_continuous_scale="Greens",
+                title=f"Importe Total Generado: ${total_costo_grafico:,.2f}",
             )
             fig_flujo.update_traces(
                 texttemplate="$%{x:,.2f}", textposition="outside"
             )
             fig_flujo.update_layout(
                 showlegend=False,
-                margin=dict(l=10, r=40, t=20, b=10),
+                margin=dict(l=10, r=40, t=30, b=10),
                 height=340,
                 paper_bgcolor="#0B0E14",
                 plot_bgcolor="#0B0E14",
-                xaxis_title="Costo ($)",
+                xaxis_title="",
                 yaxis_title="",
                 coloraxis_showscale=False,
             )
@@ -487,46 +526,24 @@ if vista == "🔎 Análisis por Producto":
 
 else:
     # ---------------------------------------------------------
-    # VISTA GENERAL DE COMPAÑÍA CON FILTRO DE MES
+    # VISTA GENERAL CON SENSITIVIDAD DE LOCACIÓN - SAP
     # ---------------------------------------------------------
-    st.title("🌐 Visión General Consolidada")
+    st.title("🌐 Visión General Consolidada de Compañía")
 
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Consolidados correspondientes al <strong>Mes de Venta: {mes_seleccionado}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación SAP: <strong>{locacion_seleccionada}</strong>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    costo_por_art = (
-        receta_precios.groupby("Cod. Venta")["Costo Insumo ($)"]
-        .sum()
-        .reset_index()
-    )
-    costo_por_art.rename(
-        columns={"Costo Insumo ($)": "Costo Unitario ($)"}, inplace=True
-    )
-
-    df_ventas_merged = pd.merge(
-        df_ventas_filt, costo_por_art, on="Cod. Venta", how="left"
-    )
-    df_ventas_merged["Costo Unitario ($)"] = df_ventas_merged[
-        "Costo Unitario ($)"
-    ].fillna(0)
-    df_ventas_merged["Costo Total Ventas ($)"] = (
-        df_ventas_merged["Físicos"] * df_ventas_merged["Costo Unitario ($)"]
-    )
-    df_ventas_merged["Margen Bruto ($)"] = (
-        df_ventas_merged["Facturación Neta"]
-        - df_ventas_merged["Costo Total Ventas ($)"]
-    )
-
-    tot_fact_neta = df_ventas_merged["Facturación Neta"].sum()
-    tot_costo_ventas = df_ventas_merged["Costo Total Ventas ($)"].sum()
-    tot_margen = tot_fact_neta - tot_costo_ventas
-    tot_volumen = df_ventas_merged["Físicos"].sum()
+    tot_fact_neta = df_ventas_filt["Facturación Neta"].sum()
+    # COSTO DE INSUMOS DIRECTO DE COLUMNA TOTAL INSUMOS
+    tot_costo_insumos = df_ventas_filt["TOTAL INSUMOS"].sum()
+    tot_margen = tot_fact_neta - tot_costo_insumos
+    tot_volumen = df_ventas_filt["Físicos"].sum()
     pct_margen_global = (
         (tot_margen / tot_fact_neta * 100) if tot_fact_neta > 0 else 0
     )
@@ -536,8 +553,8 @@ else:
         draw_kpi("Facturación Global", f"${tot_fact_neta:,.2f}")
     with gk2:
         draw_kpi(
-            "Costo Insumos",
-            f"${tot_costo_ventas:,.2f}",
+            "Costo de Insumos",
+            f"${tot_costo_insumos:,.2f}",
             color_class="kpi-warning",
         )
     with gk3:
@@ -556,54 +573,47 @@ else:
     col_g_left, col_g_right = st.columns(2)
 
     with col_g_left:
-        st.markdown("### 🌳 Insumos de Mayor Impacto Global")
-        df_global_insumos = pd.merge(
-            df_receta,
-            df_ventas_filt[["Cod. Venta", "Físicos"]],
-            on="Cod. Venta",
-        )
-        df_global_insumos = pd.merge(
-            df_global_insumos,
-            df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
-            on="Código Insumo",
-        )
-        df_global_insumos["Gasto Total Insumo ($)"] = (
-            df_global_insumos["Cant. Teorica"]
-            * df_global_insumos["Físicos"]
-            * df_global_insumos["Precio Compra"]
-        )
-
-        insumos_summary = (
-            df_global_insumos.groupby("Descripción")["Gasto Total Insumo ($)"]
+        st.markdown("### 📍 Ventas y Costo de Insumos por Locación SAP")
+        loc_summary = (
+            df_ventas_filt.groupby("LOCACION - SAP")[
+                ["Facturación Neta", "TOTAL INSUMOS"]
+            ]
             .sum()
             .reset_index()
         )
-        insumos_summary["Insumo_Corto"] = insumos_summary["Descripción"].apply(
-            lambda x: truncate_text(x, 24)
+        loc_summary.rename(
+            columns={"TOTAL INSUMOS": "Costo de Insumos"}, inplace=True
         )
 
-        fig_tree = px.treemap(
-            insumos_summary,
-            path=["Insumo_Corto"],
-            values="Gasto Total Insumo ($)",
+        fig_loc = px.bar(
+            loc_summary,
+            x="LOCACION - SAP",
+            y=["Facturación Neta", "Costo de Insumos"],
+            barmode="group",
             template="plotly_dark",
-            color="Gasto Total Insumo ($)",
-            color_continuous_scale="Plasma",
+            color_discrete_map={
+                "Facturación Neta": "#4ADE80",
+                "Costo de Insumos": "#FBBF24",
+            },
+            title=f"Comparativo Facturación vs Insumos (Total: ${tot_fact_neta:,.2f})",
         )
-        fig_tree.update_layout(
-            margin=dict(l=10, r=10, t=30, b=10),
+        fig_loc.update_layout(
+            margin=dict(l=10, r=10, t=35, b=10),
             height=380,
             paper_bgcolor="#0B0E14",
             plot_bgcolor="#0B0E14",
+            xaxis_title="",
+            yaxis_title="",
+            legend_title="",
         )
         st.plotly_chart(
-            fig_tree, use_container_width=True, config=plotly_config
+            fig_loc, use_container_width=True, config=plotly_config
         )
 
     with col_g_right:
         st.markdown("### 🏆 Top 10 Productos por Facturación")
         top_ventas = (
-            df_ventas_merged.groupby("Nombre")["Facturación Neta"]
+            df_ventas_filt.groupby("Nombre")["Facturación Neta"]
             .sum()
             .reset_index()
             .sort_values("Facturación Neta", ascending=False)
@@ -613,6 +623,8 @@ else:
             lambda x: truncate_text(x, 22)
         )
 
+        tot_top10 = top_ventas["Facturación Neta"].sum()
+
         fig_top = px.bar(
             top_ventas,
             x="Facturación Neta",
@@ -621,12 +633,16 @@ else:
             template="plotly_dark",
             color="Facturación Neta",
             color_continuous_scale="Cividis",
+            title=f"Suma Top 10: ${tot_top10:,.2f}",
+        )
+        fig_top.update_traces(
+            texttemplate="$%{x:,.2f}", textposition="outside"
         )
         fig_top.update_layout(
             yaxis={"categoryorder": "total ascending"},
             showlegend=False,
             height=380,
-            margin=dict(l=10, r=10, t=30, b=10),
+            margin=dict(l=10, r=40, t=35, b=10),
             paper_bgcolor="#0B0E14",
             plot_bgcolor="#0B0E14",
             xaxis_title="",
