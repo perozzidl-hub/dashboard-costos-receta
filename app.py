@@ -1,82 +1,81 @@
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA RESPONSIVA Y MOBILE-FIRST
+# CONFIGURACIÓN DE PÁGINA RESPONSIVA
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Executive Mobile Dashboard",
-    page_icon="📱",
+    page_title="Executive Dashboard - Costos & Margen",
+    page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",  # En móviles arranca colapsado para ganar espacio
+    initial_sidebar_state="expanded",
 )
 
-# Estilos CSS Mobile-First
+# ---------------------------------------------------------
+# ESTILOS CSS (DARK MODE & CORRECCIÓN DE TABLAS/KPIS)
+# ---------------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Fondo general */
+        /* Fondo principal */
         .stApp {
             background-color: #0E1117;
             color: #E0E6ED;
         }
         
-        /* Ajuste de contenedor principal para móviles */
+        /* Ajuste padding contenedor */
         .block-container {
-            padding-top: 1rem !important;
+            padding-top: 1.5rem !important;
             padding-bottom: 2rem !important;
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
+            padding-left: 1.5rem !important;
+            padding-right: 1.5rem !important;
         }
 
-        /* Tarjeta KPI en Mobile */
-        .kpi-card-mobile {
+        /* Tarjeta KPI estilizada */
+        .kpi-card {
             background: linear-gradient(135deg, #1E222D 0%, #171A21 100%);
             border: 1px solid #2A303C;
             border-radius: 10px;
-            padding: 12px 14px;
-            margin-bottom: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-            width: 100%;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
         }
-        .kpi-title-mobile {
-            color: #8C9BAE;
-            font-size: 0.75rem;
+        .kpi-title {
+            color: #9AA8B8;
+            font-size: 0.8rem;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.5px;
             margin-bottom: 4px;
         }
-        .kpi-value-mobile {
+        .kpi-value {
             color: #00E676;
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             font-weight: 700;
             line-height: 1.2;
-            word-break: break-all;
         }
-        .kpi-sub-mobile {
+        .kpi-sub {
             color: #4CAF50;
-            font-size: 0.75rem;
-            margin-top: 3px;
+            font-size: 0.78rem;
+            margin-top: 4px;
             font-weight: 500;
         }
         .kpi-neutral { color: #29B6F6 !important; }
         .kpi-warning { color: #FFB74D !important; }
 
-        /* Ajustes Sidebar */
+        /* Corrección estricta para tablas en Modo Oscuro (Elimina bloques blancos) */
+        [data-testid="stDataFrame"] {
+            background-color: #1E222D !important;
+            border-radius: 8px;
+            border: 1px solid #2A303C;
+            padding: 6px;
+        }
+        
+        /* Estilizado del Sidebar */
         section[data-testid="stSidebar"] {
             background-color: #131722;
             border-right: 1px solid #2A303C;
-        }
-
-        /* Tablas adaptables con scroll horizontal */
-        [data-testid="stDataFrame"] {
-            background-color: #1E222D;
-            border-radius: 8px;
-            padding: 4px;
-            overflow-x: auto;
         }
     </style>
 """,
@@ -123,13 +122,13 @@ def load_data():
 df_ventas, df_receta, df_precios, df_teoricos, receta_precios = load_data()
 
 
-# Componente HTML para Tarjetas KPI en Móvil
-def draw_kpi_mobile(title, value, sub="", color_class=""):
-    val_class = f"kpi-value-mobile {color_class}".strip()
-    sub_html = f'<div class="kpi-sub-mobile">{sub}</div>' if sub else ""
+# Función HTML para renderizar KPIs
+def draw_kpi(title, value, sub="", color_class=""):
+    val_class = f"kpi-value {color_class}".strip()
+    sub_html = f'<div class="kpi-sub">{sub}</div>' if sub else ""
     html = f"""
-    <div class="kpi-card-mobile">
-        <div class="kpi-title-mobile">{title}</div>
+    <div class="kpi-card">
+        <div class="kpi-title">{title}</div>
         <div class="{val_class}">{value}</div>
         {sub_html}
     </div>
@@ -137,24 +136,19 @@ def draw_kpi_mobile(title, value, sub="", color_class=""):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# Función auxiliar para abreviar textos largos en mobile
-def truncate_text(text, max_len=22):
+def truncate_text(text, max_len=28):
     text = str(text)
     return text[:max_len] + "..." if len(text) > max_len else text
 
 
-# Configuración del menú desplegable de Plotly para celulares
-plotly_config = {
-    "responsive": True,
-    "displayModeBar": False,  # Oculta botones molestos sobre el gráfico en celulares
-}
+plotly_config = {"responsive": True, "displayModeBar": False}
 
 # ---------------------------------------------------------
-# SIDEBAR / NAVEGACIÓN
+# NAVEGACIÓN Y FILTROS
 # ---------------------------------------------------------
-st.sidebar.title("⚡ Menu Principal")
+st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
-    "Modo de Vista:",
+    "Seleccionar Vista:",
     ["🔎 Análisis por Producto", "🌐 Visión General de Compañía"],
 )
 
@@ -179,7 +173,7 @@ if vista == "🔎 Análisis por Producto":
     cod_art = opciones_dict[item_seleccionado]
     nombre_art = item_seleccionado.split(" - ")[1]
 
-    # Cálculos específicos
+    # Cálculos por Producto
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
     costo_unitario = receta_prod["Costo Insumo ($)"].sum()
 
@@ -209,199 +203,223 @@ if vista == "🔎 Análisis por Producto":
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
-    st.subheader(f"📦 {nombre_art}")
-    st.caption(f"Cód. Venta: **{cod_art}**")
+    st.title(f"📦 {nombre_art}")
+    st.caption(
+        f"Código de Venta: **{cod_art}** | Estructura Teórica e Indicadores"
+    )
 
-    # Layout de KPIs adaptable (2 por fila en móvil)
-    k1, k2 = st.columns(2)
-    with k1:
-        draw_kpi_mobile(
+    # Fila 1 KPIs
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        draw_kpi(
             "Costo Teórico Unit.",
             f"${costo_unitario:,.2f}",
             color_class="kpi-warning",
         )
-    with k2:
-        draw_kpi_mobile("Volumen Vendido", f"{volumen_unid:,.0f} u.")
-
-    k3, k4 = st.columns(2)
-    with k3:
-        draw_kpi_mobile("Facturación Neta", f"${fact_neta:,.2f}")
-    with k4:
-        draw_kpi_mobile(
-            "Costo Producción",
+    with col2:
+        draw_kpi(
+            "Volumen Vendido",
+            f"{volumen_unid:,.0f} u.",
+            color_class="kpi-neutral",
+        )
+    with col3:
+        draw_kpi("Facturación Neta", f"${fact_neta:,.2f}")
+    with col4:
+        draw_kpi(
+            "Costo Total Prod.",
             f"${costo_total_prod:,.2f}",
             color_class="kpi-warning",
         )
-
-    k5, k6 = st.columns(2)
-    with k5:
-        draw_kpi_mobile(
+    with col5:
+        draw_kpi(
             "Margen Contribución",
             f"{pct_margen:.1f}%",
             sub=f"+${contribucion_marg:,.0f}",
         )
-    with k6:
-        draw_kpi_mobile(
-            "Precio Prom. Real",
+
+    # Fila 2 KPIs
+    col6, col7, col8, col9 = st.columns(4)
+    with col6:
+        draw_kpi(
+            "Precio Prom. Unit.",
             f"${precio_prom_unit:,.2f}",
+            color_class="kpi-neutral",
+        )
+    with col7:
+        draw_kpi("Facturación Lista", f"${fact_lista:,.2f}")
+    with col8:
+        draw_kpi(
+            "Descuento Comercial",
+            f"${descuento_comercial:,.2f}",
+            color_class="kpi-warning",
+        )
+    with col9:
+        draw_kpi(
+            "Cant. Insumos",
+            f"{len(receta_prod)} Insumos",
             color_class="kpi-neutral",
         )
 
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS ADAPTABLES A PANTALLA TÁCTIL
+    # GRÁFICOS PRINCIPALES
     # ---------------------------------------------------------
-    st.markdown("### 📊 Composición de Costos")
+    st.markdown("### 📊 Composición y Distribución de Costos")
+    col_g1, col_g2 = st.columns([3, 2])
 
-    if not receta_prod.empty:
-        df_sorted = receta_prod.sort_values(
-            "Costo Insumo ($)", ascending=True
-        ).copy()
-        df_sorted["Insumo_Corto"] = df_sorted["Descripción"].apply(
-            lambda x: truncate_text(x, 22)
-        )
+    with col_g1:
+        if not receta_prod.empty:
+            df_sorted = receta_prod.sort_values(
+                "Costo Insumo ($)", ascending=True
+            ).copy()
+            df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
+                lambda x: truncate_text(x, 30)
+            )
 
-        fig_bar = px.bar(
-            df_sorted,
-            x="Costo Insumo ($)",
-            y="Insumo_Corto",
-            orientation="h",
-            text_auto=".2f",
-            template="plotly_dark",
-            color="Costo Insumo ($)",
-            color_continuous_scale="Viridis",
-            title="Ranking de Insumos por Costo ($)",
-        )
-        fig_bar.update_layout(
-            showlegend=False,
-            margin=dict(l=10, r=10, t=35, b=10),
-            height=320,
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#0E1117",
-            xaxis_title="",
-            yaxis_title="",
-        )
-        st.plotly_chart(
-            fig_bar, use_container_width=True, config=plotly_config
-        )
+            fig_bar = px.bar(
+                df_sorted,
+                x="Costo Insumo ($)",
+                y="Insumo_Label",
+                orientation="h",
+                text="Costo Insumo ($)",
+                template="plotly_dark",
+                color="Costo Insumo ($)",
+                color_continuous_scale="Viridis",
+                title="Ranking de Insumos por Costo ($)",
+            )
+            fig_bar.update_traces(
+                texttemplate="$%{x:,.2f}", textposition="outside"
+            )
+            fig_bar.update_layout(
+                showlegend=False,
+                margin=dict(l=10, r=40, t=35, b=10),
+                height=380,
+                paper_bgcolor="#0E1117",
+                plot_bgcolor="#0E1117",
+                xaxis_title="",
+                yaxis_title="",
+                coloraxis_showscale=False,
+            )
+            st.plotly_chart(
+                fig_bar, use_container_width=True, config=plotly_config
+            )
 
-    st.divider()
+    with col_g2:
+        if not receta_prod.empty and costo_unitario > 0:
+            receta_prod_copy = receta_prod.copy()
+            receta_prod_copy["Insumo_Label"] = receta_prod_copy[
+                "Descripción"
+            ].apply(lambda x: truncate_text(x, 22))
 
-    if not receta_prod.empty and costo_unitario > 0:
-        receta_prod_copy = receta_prod.copy()
-        receta_prod_copy["Insumo_Corto"] = receta_prod_copy[
-            "Descripción"
-        ].apply(lambda x: truncate_text(x, 20))
-
-        fig_pie = px.pie(
-            receta_prod_copy,
-            names="Insumo_Corto",
-            values="Costo Insumo ($)",
-            hole=0.45,
-            template="plotly_dark",
-            color_discrete_sequence=px.colors.qualitative.Bold,
-            title="Distribución % Insumos",
-        )
-        fig_pie.update_traces(textposition="inside", textinfo="percent+label")
-        fig_pie.update_layout(
-            showlegend=False,
-            margin=dict(l=10, r=10, t=35, b=10),
-            height=320,
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#0E1117",
-        )
-        st.plotly_chart(fig_pie, use_container_width=True, config=plotly_config)
-
-    st.divider()
-
-    # ---------------------------------------------------------
-    # TABLA DE DETALLE RESPONSIVA
-    # ---------------------------------------------------------
-    st.markdown("### 📋 Desglose de Receta (BOM)")
-    tabla_out = receta_prod[
-        [
-            "Código Insumo",
-            "Descripción",
-            "Cant. Teorica",
-            "Precio Compra",
-            "Costo Insumo ($)",
-        ]
-    ].copy()
-    tabla_out["% Part."] = (
-        tabla_out["Costo Insumo ($)"] / costo_unitario * 100
-        if costo_unitario > 0
-        else 0
-    )
-    tabla_out.columns = [
-        "Cód.",
-        "Insumo",
-        "Cant. Teórica",
-        "Precio Unit. ($)",
-        "Costo ($)",
-        "% Part.",
-    ]
-
-    st.dataframe(
-        tabla_out.style.format(
-            {
-                "Cant. Teórica": "{:,.4f}",
-                "Precio Unit. ($)": "${:,.2f}",
-                "Costo ($)": "${:,.2f}",
-                "% Part.": "{:.1f}%",
-            }
-        ),
-        use_container_width=True,
-        height=300,
-    )
+            fig_pie = px.pie(
+                receta_prod_copy,
+                names="Insumo_Label",
+                values="Costo Insumo ($)",
+                hole=0.45,
+                template="plotly_dark",
+                color_discrete_sequence=px.colors.qualitative.Bold,
+                title="Distribución Percentual",
+            )
+            fig_pie.update_traces(
+                textposition="inside", textinfo="percent+label"
+            )
+            fig_pie.update_layout(
+                showlegend=False,
+                margin=dict(l=10, r=10, t=35, b=10),
+                height=380,
+                paper_bgcolor="#0E1117",
+                plot_bgcolor="#0E1117",
+            )
+            st.plotly_chart(
+                fig_pie, use_container_width=True, config=plotly_config
+            )
 
     st.divider()
 
     # ---------------------------------------------------------
-    # SANKEY RESPONSIVO
+    # TABLA DE DETALLE (BOM) Y SEGUNDO GRÁFICO HORIZONTAL
     # ---------------------------------------------------------
-    st.markdown("### 🔀 Flujo de Insumos")
-    if not receta_prod.empty:
-        sources = list(range(len(receta_prod)))
-        targets = [len(receta_prod)] * len(receta_prod)
-        values = receta_prod["Costo Insumo ($)"].tolist()
-        labels = [
-            truncate_text(d, 18) for d in receta_prod["Descripción"].tolist()
-        ] + [truncate_text(nombre_art, 18)]
+    col_t1, col_t2 = st.columns([3, 2])
 
-        fig_sankey = go.Figure(
-            data=[
-                go.Sankey(
-                    node=dict(
-                        pad=10,
-                        thickness=12,
-                        line=dict(color="#0E1117", width=0.5),
-                        label=labels,
-                        color="#29B6F6",
-                    ),
-                    link=dict(
-                        source=sources,
-                        target=targets,
-                        value=values,
-                        color="rgba(0, 230, 118, 0.35)",
-                    ),
-                )
+    with col_t1:
+        st.markdown("### 📋 Desglose de Receta (Bill of Materials)")
+        tabla_out = receta_prod[
+            [
+                "Código Insumo",
+                "Descripción",
+                "Cant. Teorica",
+                "Precio Compra",
+                "Costo Insumo ($)",
             ]
+        ].copy()
+        tabla_out["% Part."] = (
+            tabla_out["Costo Insumo ($)"] / costo_unitario * 100
+            if costo_unitario > 0
+            else 0
         )
-        fig_sankey.update_layout(
-            template="plotly_dark",
-            margin=dict(l=5, r=5, t=10, b=10),
-            height=300,
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#0E1117",
+        tabla_out.columns = [
+            "Cód. Insumo",
+            "Insumo",
+            "Cant. Teórica",
+            "Precio Unit. ($)",
+            "Costo ($)",
+            "% Participación",
+        ]
+
+        st.dataframe(
+            tabla_out.style.format(
+                {
+                    "Cant. Teórica": "{:,.4f}",
+                    "Precio Unit. ($)": "${:,.2f}",
+                    "Costo ($)": "${:,.2f}",
+                    "% Participación": "{:.1f}%",
+                }
+            ),
+            use_container_width=True,
+            height=340,
         )
-        st.plotly_chart(
-            fig_sankey, use_container_width=True, config=plotly_config
-        )
+
+    with col_t2:
+        st.markdown("### 📊 Contribución al Costo Total")
+        if not receta_prod.empty:
+            df_flujo = receta_prod.sort_values(
+                "Costo Insumo ($)", ascending=True
+            ).copy()
+            df_flujo["Insumo_Corto"] = df_flujo["Descripción"].apply(
+                lambda x: truncate_text(x, 24)
+            )
+
+            fig_flujo = px.bar(
+                df_flujo,
+                x="Costo Insumo ($)",
+                y="Insumo_Corto",
+                orientation="h",
+                text="Costo Insumo ($)",
+                template="plotly_dark",
+                color="Costo Insumo ($)",
+                color_continuous_scale="Greens",
+            )
+            fig_flujo.update_traces(
+                texttemplate="$%{x:,.2f}", textposition="outside"
+            )
+            fig_flujo.update_layout(
+                showlegend=False,
+                margin=dict(l=10, r=40, t=20, b=10),
+                height=340,
+                paper_bgcolor="#0E1117",
+                plot_bgcolor="#0E1117",
+                xaxis_title="Costo ($)",
+                yaxis_title="",
+                coloraxis_showscale=False,
+            )
+            st.plotly_chart(
+                fig_flujo, use_container_width=True, config=plotly_config
+            )
 
 else:
     # ---------------------------------------------------------
-    # VISTA GENERAL DE LA COMPAÑÍA (MOBILE)
+    # VISTA GENERAL DE LA COMPAÑÍA
     # ---------------------------------------------------------
     st.title("🌐 Visión General Consolidada")
 
@@ -436,104 +454,105 @@ else:
         (tot_margen / tot_fact_neta * 100) if tot_fact_neta > 0 else 0
     )
 
-    # KPIs Consolidados
-    gk1, gk2 = st.columns(2)
+    gk1, gk2, gk3, gk4 = st.columns(4)
     with gk1:
-        draw_kpi_mobile("Facturación Global", f"${tot_fact_neta:,.2f}")
+        draw_kpi("Facturación Global", f"${tot_fact_neta:,.2f}")
     with gk2:
-        draw_kpi_mobile(
+        draw_kpi(
             "Costo Insumos",
             f"${tot_costo_ventas:,.2f}",
             color_class="kpi-warning",
         )
-
-    gk3, gk4 = st.columns(2)
     with gk3:
-        draw_kpi_mobile(
+        draw_kpi(
             "Margen Bruto",
             f"${tot_margen:,.2f}",
             sub=f"{pct_margen_global:.1f}% Margen",
         )
     with gk4:
-        draw_kpi_mobile(
+        draw_kpi(
             "Volumen Total", f"{tot_volumen:,.0f} u.", color_class="kpi-neutral"
         )
 
     st.divider()
 
-    # Treemap Insumos Global
-    st.markdown("### 🌳 Insumos de Mayor Impacto Global")
-    df_global_insumos = pd.merge(
-        df_receta, df_ventas[["Cod. Venta", "Físicos"]], on="Cod. Venta"
-    )
-    df_global_insumos = pd.merge(
-        df_global_insumos,
-        df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
-        on="Código Insumo",
-    )
-    df_global_insumos["Gasto Total Insumo ($)"] = (
-        df_global_insumos["Cant. Teorica"]
-        * df_global_insumos["Físicos"]
-        * df_global_insumos["Precio Compra"]
-    )
+    col_g_left, col_g_right = st.columns(2)
 
-    insumos_summary = (
-        df_global_insumos.groupby("Descripción")["Gasto Total Insumo ($)"]
-        .sum()
-        .reset_index()
-    )
-    insumos_summary["Insumo_Corto"] = insumos_summary["Descripción"].apply(
-        lambda x: truncate_text(x, 22)
-    )
+    with col_g_left:
+        st.markdown("### 🌳 Insumos de Mayor Impacto Global")
+        df_global_insumos = pd.merge(
+            df_receta, df_ventas[["Cod. Venta", "Físicos"]], on="Cod. Venta"
+        )
+        df_global_insumos = pd.merge(
+            df_global_insumos,
+            df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
+            on="Código Insumo",
+        )
+        df_global_insumos["Gasto Total Insumo ($)"] = (
+            df_global_insumos["Cant. Teorica"]
+            * df_global_insumos["Físicos"]
+            * df_global_insumos["Precio Compra"]
+        )
 
-    fig_tree = px.treemap(
-        insumos_summary,
-        path=["Insumo_Corto"],
-        values="Gasto Total Insumo ($)",
-        template="plotly_dark",
-        color="Gasto Total Insumo ($)",
-        color_continuous_scale="Plasma",
-    )
-    fig_tree.update_layout(
-        margin=dict(l=5, r=5, t=25, b=5),
-        height=350,
-        paper_bgcolor="#0E1117",
-        plot_bgcolor="#0E1117",
-    )
-    st.plotly_chart(fig_tree, use_container_width=True, config=plotly_config)
+        insumos_summary = (
+            df_global_insumos.groupby("Descripción")["Gasto Total Insumo ($)"]
+            .sum()
+            .reset_index()
+        )
+        insumos_summary["Insumo_Corto"] = insumos_summary["Descripción"].apply(
+            lambda x: truncate_text(x, 24)
+        )
 
-    st.divider()
+        fig_tree = px.treemap(
+            insumos_summary,
+            path=["Insumo_Corto"],
+            values="Gasto Total Insumo ($)",
+            template="plotly_dark",
+            color="Gasto Total Insumo ($)",
+            color_continuous_scale="Plasma",
+        )
+        fig_tree.update_layout(
+            margin=dict(l=10, r=10, t=30, b=10),
+            height=380,
+            paper_bgcolor="#0E1117",
+            plot_bgcolor="#0E1117",
+        )
+        st.plotly_chart(
+            fig_tree, use_container_width=True, config=plotly_config
+        )
 
-    # Top Productos
-    st.markdown("### 🏆 Top 10 Productos por Facturación")
-    top_ventas = (
-        df_ventas_merged.groupby("Nombre")["Facturación Neta"]
-        .sum()
-        .reset_index()
-        .sort_values("Facturación Neta", ascending=False)
-        .head(10)
-    )
-    top_ventas["Nombre_Corto"] = top_ventas["Nombre"].apply(
-        lambda x: truncate_text(x, 20)
-    )
+    with col_g_right:
+        st.markdown("### 🏆 Top 10 Productos por Facturación")
+        top_ventas = (
+            df_ventas_merged.groupby("Nombre")["Facturación Neta"]
+            .sum()
+            .reset_index()
+            .sort_values("Facturación Neta", ascending=False)
+            .head(10)
+        )
+        top_ventas["Nombre_Corto"] = top_ventas["Nombre"].apply(
+            lambda x: truncate_text(x, 22)
+        )
 
-    fig_top = px.bar(
-        top_ventas,
-        x="Facturación Neta",
-        y="Nombre_Corto",
-        orientation="h",
-        template="plotly_dark",
-        color="Facturación Neta",
-        color_continuous_scale="Cividis",
-    )
-    fig_top.update_layout(
-        yaxis={"categoryorder": "total ascending"},
-        showlegend=False,
-        height=350,
-        margin=dict(l=10, r=10, t=20, b=10),
-        paper_bgcolor="#0E1117",
-        plot_bgcolor="#0E1117",
-        xaxis_title="",
-        yaxis_title="",
-    )
-    st.plotly_chart(fig_top, use_container_width=True, config=plotly_config)
+        fig_top = px.bar(
+            top_ventas,
+            x="Facturación Neta",
+            y="Nombre_Corto",
+            orientation="h",
+            template="plotly_dark",
+            color="Facturación Neta",
+            color_continuous_scale="Cividis",
+        )
+        fig_top.update_layout(
+            yaxis={"categoryorder": "total ascending"},
+            showlegend=False,
+            height=380,
+            margin=dict(l=10, r=10, t=30, b=10),
+            paper_bgcolor="#0E1117",
+            plot_bgcolor="#0E1117",
+            xaxis_title="",
+            yaxis_title="",
+        )
+        st.plotly_chart(
+            fig_top, use_container_width=True, config=plotly_config
+        )
