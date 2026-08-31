@@ -176,22 +176,23 @@ def load_data():
 
     if col_tipo:
         df_ventas["Tipo_Producto"] = (
-            df_ventas[col_tipo].astype(str).str.strip()
+            df_ventas[col_tipo].astype(str).str.strip().str.upper()
         )
     else:
-        df_ventas["Tipo_Producto"] = "Propio"
+        df_ventas["Tipo_Producto"] = "P"
 
     for df in [df_ventas, df_receta]:
-        df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
+        if "Cod. Venta" in df.columns:
+            df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
 
     for df in [df_receta, df_precios]:
-        df["Código Insumo"] = pd.to_numeric(
-            df["Código Insumo"], errors="coerce"
-        )
+        if "Código Insumo" in df.columns:
+            df["Código Insumo"] = pd.to_numeric(
+                df["Código Insumo"], errors="coerce"
+            )
 
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
-    df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
-
+    
     if "TOTAL INSUMOS" not in df_ventas.columns:
         df_ventas["TOTAL INSUMOS"] = 0.0
     else:
@@ -199,15 +200,19 @@ def load_data():
             df_ventas["TOTAL INSUMOS"], errors="coerce"
         ).fillna(0.0)
 
-    receta_precios = pd.merge(
-        df_receta,
-        df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
-        on="Código Insumo",
-        how="left",
-    )
-    receta_precios["Costo Insumo ($)"] = (
-        receta_precios["Cant. Teorica"] * receta_precios["Precio Compra"]
-    )
+    if not df_receta.empty and "Cod. Venta" in df_receta.columns and "Código Insumo" in df_receta.columns:
+        df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
+        receta_precios = pd.merge(
+            df_receta,
+            df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
+            on="Código Insumo",
+            how="left",
+        )
+        receta_precios["Costo Insumo ($)"] = (
+            receta_precios["Cant. Teorica"] * receta_precios["Precio Compra"]
+        )
+    else:
+        receta_precios = pd.DataFrame()
 
     return df_ventas, df_receta, df_precios, receta_precios
 
@@ -280,7 +285,7 @@ locacion_seleccionada = st.sidebar.selectbox(
     "Locación - SAP:", opciones_locacion
 )
 
-# 3. NUEVO FILTRO: Tipo de Producto (Propio / Reventa)
+# 3. FILTRO: Tipo de Producto (Propio / Reventa)
 tipos_disponibles = sorted(
     [
         str(t)
@@ -315,23 +320,17 @@ st.sidebar.divider()
 if vista == "🔎 Análisis por Producto":
     st.sidebar.header("📦 Seleccionar Producto")
 
-    # Mapeo de artículos según df_ventas_filt o df_receta
+    # CORRECCIÓN CLAVE: Extraer directamente de la tabla de VENTAS filtrada para incluir productos 'R' sin receta.
+    col_nombre_art = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
     articulos_df = (
-        df_receta[["Cod. Venta", "Artículo"]]
+        df_ventas_filt[["Cod. Venta", col_nombre_art]]
         .drop_duplicates()
-        .sort_values("Artículo")
+        .sort_values(col_nombre_art)
     )
-
-    # Si hay filtro de tipo seleccionado, restringir listado de productos
-    if tipo_seleccionado != "Todos los Tipos":
-        codigos_tipo = df_ventas[
-            df_ventas["Tipo_Producto"] == tipo_seleccionado
-        ]["Cod. Venta"].unique()
-        articulos_df = articulos_df[articulos_df["Cod. Venta"].isin(codigos_tipo)]
 
     if not articulos_df.empty:
         opciones_dict = {
-            f"{int(row['Cod. Venta'])} - {row['Artículo']}": int(
+            f"{int(row['Cod. Venta'])} - {row[col_nombre_art]}": int(
                 row["Cod. Venta"]
             )
             for _, row in articulos_df.iterrows()
@@ -343,7 +342,7 @@ if vista == "🔎 Análisis por Producto":
         cod_art = opciones_dict[item_seleccionado]
         nombre_art = item_seleccionado.split(" - ")[1]
     else:
-        st.warning("No hay productos disponibles para el tipo seleccionado.")
+        st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
 
     # Determinación Tipo Producto
@@ -351,12 +350,22 @@ if vista == "🔎 Análisis por Producto":
     tipo_prod = (
         ventas_prod_gen["Tipo_Producto"].iloc[0]
         if not ventas_prod_gen.empty
-        else "Propio"
+        else "P"
     )
 
     # Cálculos por Producto
-    receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
-    costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
+    receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
+    
+    # Manejo dinámico de costo unitario según si tiene receta o si es reventa
+    if not receta_prod.empty:
+        costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
+    else:
+        # Si es Reventa (R) se intenta obtener el costo desde PRECIOS.xlsx usando Cod. Venta como Código Insumo
+        precio_match = df_precios[df_precios["Código Insumo"] == cod_art] if "Código Insumo" in df_precios.columns else pd.DataFrame()
+        if not precio_match.empty and "Precio Compra" in precio_match.columns:
+            costo_unitario_teorico = precio_match["Precio Compra"].iloc[0]
+        else:
+            costo_unitario_teorico = 0.0
 
     ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
 
@@ -490,7 +499,7 @@ if vista == "🔎 Análisis por Producto":
     fig_unit.update_traces(texttemplate="$%{x:,.2f}", textposition="outside")
     fig_unit.update_layout(
         showlegend=False,
-        yaxis={"categoryorder": "total ascending"},  # Barra más grande arriba
+        yaxis={"categoryorder": "total ascending"},
         margin=dict(l=10, r=60, t=35, b=10),
         height=220,
         paper_bgcolor="#0B0E14",
@@ -503,14 +512,14 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # BARRAS DESCENDENTES Y TORTA PORCENTUAL (LETRAS OSCURAS)
+    # BARRAS DESCENDENTES Y TORTA PORCENTUAL / BOM
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición de Insumos e Importes Totales")
-    col_g1, col_g2 = st.columns([3, 2])
-
-    total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
     if not receta_prod.empty:
+        total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
+        col_g1, col_g2 = st.columns([3, 2])
+
         df_sorted_desc = receta_prod.sort_values(
             "Costo Insumo ($)", ascending=False
         ).copy()
@@ -541,9 +550,7 @@ if vista == "🔎 Análisis por Producto":
             )
             fig_bar.update_layout(
                 showlegend=False,
-                yaxis={
-                    "categoryorder": "total ascending"
-                },  # Barra más grande arriba
+                yaxis={"categoryorder": "total ascending"},
                 margin=dict(l=10, r=50, t=35, b=10),
                 height=380,
                 paper_bgcolor="#0B0E14",
@@ -566,8 +573,6 @@ if vista == "🔎 Análisis por Producto":
                 color_discrete_map=mapa_colores,
                 title="Distribución % Insumos",
             )
-
-            # Porcentajes más grandes (size=16) y texto oscuro (#0F172A)
             fig_pie.update_traces(
                 textposition="inside",
                 textinfo="percent",
@@ -592,67 +597,66 @@ if vista == "🔎 Análisis por Producto":
                 fig_pie, use_container_width=True, config=plotly_config
             )
 
-    st.divider()
+        st.divider()
 
-    # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM)
-    # ---------------------------------------------------------
-    st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
+        st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
 
-    tabla_out = receta_prod[
-        [
-            "Código Insumo",
-            "Descripción",
-            "Cant. Teorica",
-            "Precio Compra",
-            "Costo Insumo ($)",
+        tabla_out = receta_prod[
+            [
+                "Código Insumo",
+                "Descripción",
+                "Cant. Teorica",
+                "Precio Compra",
+                "Costo Insumo ($)",
+            ]
+        ].copy()
+        tabla_out["% Part."] = (
+            tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100
+            if total_costo_grafico > 0
+            else 0
+        )
+        tabla_out.columns = [
+            "Cód. Insumo",
+            "Insumo",
+            "Cant. Teórica",
+            "Precio Unit. ($)",
+            "Costo ($)",
+            "% Participación",
         ]
-    ].copy()
-    tabla_out["% Part."] = (
-        tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100
-        if total_costo_grafico > 0
-        else 0
-    )
-    tabla_out.columns = [
-        "Cód. Insumo",
-        "Insumo",
-        "Cant. Teórica",
-        "Precio Unit. ($)",
-        "Costo ($)",
-        "% Participación",
-    ]
 
-    tabla_out_formatted = tabla_out.copy()
-    tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
-        "Cant. Teórica"
-    ].apply(lambda x: f"{x:,.4f}")
-    tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted[
-        "Precio Unit. ($)"
-    ].apply(lambda x: f"${x:,.2f}")
-    tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(
-        lambda x: f"${x:,.2f}"
-    )
-    tabla_out_formatted["% Participación"] = tabla_out_formatted[
-        "% Participación"
-    ].apply(lambda x: f"{x:.1f}%")
+        tabla_out_formatted = tabla_out.copy()
+        tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
+            "Cant. Teórica"
+        ].apply(lambda x: f"{x:,.4f}")
+        tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted[
+            "Precio Unit. ($)"
+        ].apply(lambda x: f"${x:,.2f}")
+        tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(
+            lambda x: f"${x:,.2f}"
+        )
+        tabla_out_formatted["% Participación"] = tabla_out_formatted[
+            "% Participación"
+        ].apply(lambda x: f"{x:.1f}%")
 
-    fila_total = pd.DataFrame(
-        [
-            {
-                "Cód. Insumo": "TOTAL",
-                "Insumo": "SUMATORIA TOTAL RECURSOS",
-                "Cant. Teórica": "-",
-                "Precio Unit. ($)": "-",
-                "Costo ($)": f"${total_costo_grafico:,.2f}",
-                "% Participación": "100.0%",
-            }
-        ]
-    )
+        fila_total = pd.DataFrame(
+            [
+                {
+                    "Cód. Insumo": "TOTAL",
+                    "Insumo": "SUMATORIA TOTAL RECURSOS",
+                    "Cant. Teórica": "-",
+                    "Precio Unit. ($)": "-",
+                    "Costo ($)": f"${total_costo_grafico:,.2f}",
+                    "% Participación": "100.0%",
+                }
+            ]
+        )
 
-    tabla_final = pd.concat(
-        [tabla_out_formatted, fila_total], ignore_index=True
-    )
-    st.table(tabla_final)
+        tabla_final = pd.concat(
+            [tabla_out_formatted, fila_total], ignore_index=True
+        )
+        st.table(tabla_final)
+    else:
+        st.info("ℹ️ Este producto se clasifica como Reventa o no posee desglose de receta (BOM). Su costo unitario se calcula directamente por costo de adquisición/reventa.")
 
 else:
     # ---------------------------------------------------------
@@ -742,14 +746,15 @@ else:
 
     with col_g_right:
         st.markdown("### 🏆 Top 10 Productos por Facturación")
+        col_nom_top = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
         top_ventas = (
-            df_ventas_filt.groupby("Nombre")["Facturación Neta"]
+            df_ventas_filt.groupby(col_nom_top)["Facturación Neta"]
             .sum()
             .reset_index()
             .sort_values("Facturación Neta", ascending=False)
             .head(10)
         )
-        top_ventas["Nombre_Corto"] = top_ventas["Nombre"].apply(
+        top_ventas["Nombre_Corto"] = top_ventas[col_nom_top].apply(
             lambda x: truncate_text(x, 22)
         )
 
@@ -769,9 +774,7 @@ else:
             texttemplate="$%{x:,.2f}", textposition="outside"
         )
         fig_top.update_layout(
-            yaxis={
-                "categoryorder": "total ascending"
-            },  # Barra más grande arriba
+            yaxis={"categoryorder": "total ascending"},
             showlegend=False,
             height=380,
             margin=dict(l=10, r=40, t=35, b=10),
