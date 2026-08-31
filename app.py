@@ -179,7 +179,7 @@ def load_data():
             df_ventas[col_tipo].astype(str).str.strip()
         )
     else:
-        df_ventas["Tipo_Producto"] = "Propio / No Especificado"
+        df_ventas["Tipo_Producto"] = "Propio"
 
     for df in [df_ventas, df_receta]:
         df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
@@ -260,12 +260,14 @@ vista = st.sidebar.radio(
 st.sidebar.divider()
 st.sidebar.header("🗓️ Filtros Globales")
 
+# 1. Filtro Mes
 meses_disponibles = sorted(
     list(set(df_ventas["Mes_Venta"].dropna().unique()))
 )
 opciones_mes = ["Todos los Meses"] + [m for m in meses_disponibles if m != ""]
 mes_seleccionado = st.sidebar.selectbox("Mes de Venta:", opciones_mes)
 
+# 2. Filtro Locación
 locaciones_disponibles = sorted(
     [
         str(loc)
@@ -278,6 +280,20 @@ locacion_seleccionada = st.sidebar.selectbox(
     "Locación - SAP:", opciones_locacion
 )
 
+# 3. NUEVO FILTRO: Tipo de Producto (Propio / Reventa)
+tipos_disponibles = sorted(
+    [
+        str(t)
+        for t in df_ventas["Tipo_Producto"].dropna().unique()
+        if str(t).strip() != ""
+    ]
+)
+opciones_tipo = ["Todos los Tipos"] + tipos_disponibles
+tipo_seleccionado = st.sidebar.selectbox(
+    "Tipo de Producto (Origen):", opciones_tipo
+)
+
+# Aplicar Filtros Globales a Dataset de Ventas
 df_ventas_filt = df_ventas.copy()
 if mes_seleccionado != "Todos los Meses":
     df_ventas_filt = df_ventas_filt[
@@ -289,33 +305,53 @@ if locacion_seleccionada != "Todas las Locaciones":
         df_ventas_filt["LOCACION - SAP"] == locacion_seleccionada
     ]
 
+if tipo_seleccionado != "Todos los Tipos":
+    df_ventas_filt = df_ventas_filt[
+        df_ventas_filt["Tipo_Producto"] == tipo_seleccionado
+    ]
+
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
     st.sidebar.header("📦 Seleccionar Producto")
 
+    # Mapeo de artículos según df_ventas_filt o df_receta
     articulos_df = (
         df_receta[["Cod. Venta", "Artículo"]]
         .drop_duplicates()
         .sort_values("Artículo")
     )
-    opciones_dict = {
-        f"{int(row['Cod. Venta'])} - {row['Artículo']}": int(row["Cod. Venta"])
-        for _, row in articulos_df.iterrows()
-    }
 
-    item_seleccionado = st.sidebar.selectbox(
-        "Seleccionar Artículo:", list(opciones_dict.keys())
-    )
-    cod_art = opciones_dict[item_seleccionado]
-    nombre_art = item_seleccionado.split(" - ")[1]
+    # Si hay filtro de tipo seleccionado, restringir listado de productos
+    if tipo_seleccionado != "Todos los Tipos":
+        codigos_tipo = df_ventas[
+            df_ventas["Tipo_Producto"] == tipo_seleccionado
+        ]["Cod. Venta"].unique()
+        articulos_df = articulos_df[articulos_df["Cod. Venta"].isin(codigos_tipo)]
+
+    if not articulos_df.empty:
+        opciones_dict = {
+            f"{int(row['Cod. Venta'])} - {row['Artículo']}": int(
+                row["Cod. Venta"]
+            )
+            for _, row in articulos_df.iterrows()
+        }
+
+        item_seleccionado = st.sidebar.selectbox(
+            "Seleccionar Artículo:", list(opciones_dict.keys())
+        )
+        cod_art = opciones_dict[item_seleccionado]
+        nombre_art = item_seleccionado.split(" - ")[1]
+    else:
+        st.warning("No hay productos disponibles para el tipo seleccionado.")
+        st.stop()
 
     # Determinación Tipo Producto
     ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
     tipo_prod = (
         ventas_prod_gen["Tipo_Producto"].iloc[0]
         if not ventas_prod_gen.empty
-        else "Producto Propio"
+        else "Propio"
     )
 
     # Cálculos por Producto
@@ -454,7 +490,7 @@ if vista == "🔎 Análisis por Producto":
     fig_unit.update_traces(texttemplate="$%{x:,.2f}", textposition="outside")
     fig_unit.update_layout(
         showlegend=False,
-        yaxis={"categoryorder": "total ascending"},  # La barra mayor arriba
+        yaxis={"categoryorder": "total ascending"},  # Barra más grande arriba
         margin=dict(l=10, r=60, t=35, b=10),
         height=220,
         paper_bgcolor="#0B0E14",
@@ -507,7 +543,7 @@ if vista == "🔎 Análisis por Producto":
                 showlegend=False,
                 yaxis={
                     "categoryorder": "total ascending"
-                },  # Barra más grande siempre arriba
+                },  # Barra más grande arriba
                 margin=dict(l=10, r=50, t=35, b=10),
                 height=380,
                 paper_bgcolor="#0B0E14",
@@ -531,7 +567,7 @@ if vista == "🔎 Análisis por Producto":
                 title="Distribución % Insumos",
             )
 
-            # Porcentajes más grandes (size=16) y números con color oscuro (#0F172A)
+            # Porcentajes más grandes (size=16) y texto oscuro (#0F172A)
             fig_pie.update_traces(
                 textposition="inside",
                 textinfo="percent",
@@ -627,7 +663,7 @@ else:
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación SAP: <strong>{locacion_seleccionada}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación SAP: <strong>{locacion_seleccionada}</strong> | Categoría Filtro: <strong>{tipo_seleccionado}</strong>
         </div>
         """,
         unsafe_allow_html=True,
