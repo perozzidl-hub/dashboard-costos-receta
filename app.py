@@ -3,79 +3,97 @@ import plotly.express as px
 import streamlit as st
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN DE PÁGINA RESPONSIVA
+# CONFIGURACIÓN DE PÁGINA RESPONSIVA Y PREMIUM DARK MODE
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Executive Dashboard - Costos & Margen",
-    page_icon="📈",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS (DARK MODE & CORRECCIÓN DE TABLAS/KPIS)
+# ESTILOS CSS AVANZADOS (INTERFAZ MODERNA & CONTRASTE)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Fondo principal */
+        /* Fondo General Dark Mode */
         .stApp {
-            background-color: #0E1117;
-            color: #E0E6ED;
+            background-color: #0B0E14;
+            color: #E2E8F0;
         }
         
-        /* Ajuste padding contenedor */
         .block-container {
-            padding-top: 1.5rem !important;
+            padding-top: 1.2rem !important;
             padding-bottom: 2rem !important;
             padding-left: 1.5rem !important;
             padding-right: 1.5rem !important;
         }
 
-        /* Tarjeta KPI estilizada */
+        /* Banner Informativo de Mes */
+        .month-banner {
+            background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%);
+            border-left: 4px solid #38BDF8;
+            padding: 10px 16px;
+            border-radius: 6px;
+            margin-bottom: 18px;
+            font-size: 0.9rem;
+            color: #94A3B8;
+        }
+        .month-banner strong {
+            color: #38BDF8;
+        }
+
+        /* Tarjeta KPI Premium */
         .kpi-card {
-            background: linear-gradient(135deg, #1E222D 0%, #171A21 100%);
-            border: 1px solid #2A303C;
-            border-radius: 10px;
+            background: linear-gradient(135deg, #1E293B 0%, #111827 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
             padding: 14px 16px;
             margin-bottom: 12px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .kpi-card:hover {
+            border-color: #38BDF8;
+            transform: translateY(-2px);
         }
         .kpi-title {
-            color: #9AA8B8;
-            font-size: 0.8rem;
+            color: #94A3B8;
+            font-size: 0.78rem;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 4px;
         }
         .kpi-value {
-            color: #00E676;
-            font-size: 1.4rem;
+            color: #4ADE80;
+            font-size: 1.45rem;
             font-weight: 700;
             line-height: 1.2;
         }
         .kpi-sub {
-            color: #4CAF50;
+            color: #22C55E;
             font-size: 0.78rem;
             margin-top: 4px;
             font-weight: 500;
         }
-        .kpi-neutral { color: #29B6F6 !important; }
-        .kpi-warning { color: #FFB74D !important; }
+        .kpi-neutral { color: #38BDF8 !important; }
+        .kpi-warning { color: #FBBF24 !important; }
 
-        /* Corrección estricta para tablas en Modo Oscuro (Elimina bloques blancos) */
+        /* Estilizado de Dataframes/Tablas Dark Mode */
         [data-testid="stDataFrame"] {
-            background-color: #1E222D !important;
+            background-color: #1E293B !important;
             border-radius: 8px;
-            border: 1px solid #2A303C;
+            border: 1px solid #334155;
             padding: 6px;
         }
-        
-        /* Estilizado del Sidebar */
+
+        /* Sidebar Styling */
         section[data-testid="stSidebar"] {
-            background-color: #131722;
-            border-right: 1px solid #2A303C;
+            background-color: #0F172A;
+            border-right: 1px solid #1E293B;
         }
     </style>
 """,
@@ -84,18 +102,38 @@ st.markdown(
 
 
 # ---------------------------------------------------------
-# CARGA Y PREPROCESAMIENTO DE DATOS
+# CARGA Y PREPROCESAMIENTO DE DATOS CON MES DE VENTA
 # ---------------------------------------------------------
 @st.cache_data
 def load_data():
     df_ventas = pd.read_excel("VENTAS.xlsx", header=7)
     df_receta = pd.read_excel("RECETA.xlsx")
     df_precios = pd.read_excel("PRECIOS.xlsx")
-    df_teoricos = pd.read_excel("TEORICOS.xlsx", header=6)
 
+    # Estandarizar nombre de columna
     df_ventas.rename(columns={"ART": "Cod. Venta"}, inplace=True)
 
-    for df in [df_ventas, df_receta, df_teoricos]:
+    # Convertir Fechas y extraer 'Mes_Venta' (YYYY-MM)
+    if "FECHA" in df_ventas.columns:
+        df_ventas["FECHA"] = pd.to_datetime(df_ventas["FECHA"], errors="coerce")
+        df_ventas["Mes_Venta"] = df_ventas["FECHA"].dt.strftime("%Y-%m")
+    else:
+        df_ventas["Mes_Venta"] = "Sin Fecha"
+
+    if "Mes" in df_receta.columns:
+        df_receta["Mes"] = pd.to_datetime(df_receta["Mes"], errors="coerce")
+        df_receta["Mes_Str"] = df_receta["Mes"].dt.strftime("%Y-%m")
+    else:
+        df_receta["Mes_Str"] = "Sin Fecha"
+
+    if "Mes" in df_precios.columns:
+        df_precios["Mes"] = pd.to_datetime(df_precios["Mes"], errors="coerce")
+        df_precios["Mes_Str"] = df_precios["Mes"].dt.strftime("%Y-%m")
+    else:
+        df_precios["Mes_Str"] = "Sin Fecha"
+
+    # Conversiones numéricas
+    for df in [df_ventas, df_receta]:
         df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
 
     for df in [df_receta, df_precios]:
@@ -106,6 +144,7 @@ def load_data():
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
     df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
 
+    # Cruce Receta + Precios
     receta_precios = pd.merge(
         df_receta,
         df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
@@ -116,13 +155,13 @@ def load_data():
         receta_precios["Cant. Teorica"] * receta_precios["Precio Compra"]
     )
 
-    return df_ventas, df_receta, df_precios, df_teoricos, receta_precios
+    return df_ventas, df_receta, df_precios, receta_precios
 
 
-df_ventas, df_receta, df_precios, df_teoricos, receta_precios = load_data()
+df_ventas, df_receta, df_precios, receta_precios = load_data()
 
 
-# Función HTML para renderizar KPIs
+# Componente HTML para KPIs
 def draw_kpi(title, value, sub="", color_class=""):
     val_class = f"kpi-value {color_class}".strip()
     sub_html = f'<div class="kpi-sub">{sub}</div>' if sub else ""
@@ -144,7 +183,7 @@ def truncate_text(text, max_len=28):
 plotly_config = {"responsive": True, "displayModeBar": False}
 
 # ---------------------------------------------------------
-# NAVEGACIÓN Y FILTROS
+# SIDEBAR / NAVEGACIÓN Y FILTRO POR MES
 # ---------------------------------------------------------
 st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
@@ -153,9 +192,30 @@ vista = st.sidebar.radio(
 )
 
 st.sidebar.divider()
+st.sidebar.header("🗓️ Filtro de Período")
+
+# Obtener meses disponibles
+meses_disponibles = sorted(
+    list(set(df_ventas["Mes_Venta"].dropna().unique()))
+)
+if not meses_disponibles or meses_disponibles == ["Sin Fecha"]:
+    meses_disponibles = ["Todos los Meses"]
+
+opciones_mes = ["Todos los Meses"] + [
+    m for m in meses_disponibles if m != "Todos los Meses"
+]
+mes_seleccionado = st.sidebar.selectbox("Mes de Venta / Costos:", opciones_mes)
+
+# Filtrado de Ventas por Mes
+if mes_seleccionado != "Todos los Meses":
+    df_ventas_filt = df_ventas[df_ventas["Mes_Venta"] == mes_seleccionado]
+else:
+    df_ventas_filt = df_ventas.copy()
+
+st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-    st.sidebar.header("Filtros")
+    st.sidebar.header("📦 Filtro de Producto")
 
     articulos_df = (
         df_receta[["Cod. Venta", "Artículo"]]
@@ -173,11 +233,12 @@ if vista == "🔎 Análisis por Producto":
     cod_art = opciones_dict[item_seleccionado]
     nombre_art = item_seleccionado.split(" - ")[1]
 
-    # Cálculos por Producto
+    # Receta e Insumos
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
     costo_unitario = receta_prod["Costo Insumo ($)"].sum()
 
-    ventas_prod = df_ventas[df_ventas["Cod. Venta"] == cod_art]
+    # Ventas filtradas
+    ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
     volumen_unid = (
         ventas_prod["Físicos"].sum() if "Físicos" in ventas_prod.columns else 0
     )
@@ -201,14 +262,22 @@ if vista == "🔎 Análisis por Producto":
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
 
     # ---------------------------------------------------------
-    # ENCABEZADO Y KPIS
+    # HEADER Y BANNER DE MES DE VENTA
     # ---------------------------------------------------------
     st.title(f"📦 {nombre_art}")
-    st.caption(
-        f"Código de Venta: **{cod_art}** | Estructura Teórica e Indicadores"
+
+    # Banner con el mes explícito
+    st.markdown(
+        f"""
+        <div class="month-banner">
+            📅 Período Evaluado: <strong>Mes de Venta {mes_seleccionado}</strong> | Código de Venta: <strong>{cod_art}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    # Fila 1 KPIs
+    st.markdown("### 🚀 Indicadores Clave (KPIs)")
+
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         draw_kpi(
@@ -237,11 +306,10 @@ if vista == "🔎 Análisis por Producto":
             sub=f"+${contribucion_marg:,.0f}",
         )
 
-    # Fila 2 KPIs
     col6, col7, col8, col9 = st.columns(4)
     with col6:
         draw_kpi(
-            "Precio Prom. Unit.",
+            "Precio Prom. Real",
             f"${precio_prom_unit:,.2f}",
             color_class="kpi-neutral",
         )
@@ -255,7 +323,7 @@ if vista == "🔎 Análisis por Producto":
         )
     with col9:
         draw_kpi(
-            "Cant. Insumos",
+            "Insumos en Receta",
             f"{len(receta_prod)} Insumos",
             color_class="kpi-neutral",
         )
@@ -263,7 +331,7 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS PRINCIPALES
+    # GRÁFICOS INTERACTIVOS
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición y Distribución de Costos")
     col_g1, col_g2 = st.columns([3, 2])
@@ -274,7 +342,7 @@ if vista == "🔎 Análisis por Producto":
                 "Costo Insumo ($)", ascending=True
             ).copy()
             df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
-                lambda x: truncate_text(x, 30)
+                lambda x: truncate_text(x, 28)
             )
 
             fig_bar = px.bar(
@@ -295,8 +363,8 @@ if vista == "🔎 Análisis por Producto":
                 showlegend=False,
                 margin=dict(l=10, r=40, t=35, b=10),
                 height=380,
-                paper_bgcolor="#0E1117",
-                plot_bgcolor="#0E1117",
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
                 xaxis_title="",
                 yaxis_title="",
                 coloraxis_showscale=False,
@@ -310,7 +378,7 @@ if vista == "🔎 Análisis por Producto":
             receta_prod_copy = receta_prod.copy()
             receta_prod_copy["Insumo_Label"] = receta_prod_copy[
                 "Descripción"
-            ].apply(lambda x: truncate_text(x, 22))
+            ].apply(lambda x: truncate_text(x, 20))
 
             fig_pie = px.pie(
                 receta_prod_copy,
@@ -319,7 +387,7 @@ if vista == "🔎 Análisis por Producto":
                 hole=0.45,
                 template="plotly_dark",
                 color_discrete_sequence=px.colors.qualitative.Bold,
-                title="Distribución Percentual",
+                title="Distribución % Insumos",
             )
             fig_pie.update_traces(
                 textposition="inside", textinfo="percent+label"
@@ -328,8 +396,8 @@ if vista == "🔎 Análisis por Producto":
                 showlegend=False,
                 margin=dict(l=10, r=10, t=35, b=10),
                 height=380,
-                paper_bgcolor="#0E1117",
-                plot_bgcolor="#0E1117",
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
             )
             st.plotly_chart(
                 fig_pie, use_container_width=True, config=plotly_config
@@ -338,12 +406,12 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DE DETALLE (BOM) Y SEGUNDO GRÁFICO HORIZONTAL
+    # TABLA DESGLOSE (BOM) Y BARRAS DE IMPACTO
     # ---------------------------------------------------------
     col_t1, col_t2 = st.columns([3, 2])
 
     with col_t1:
-        st.markdown("### 📋 Desglose de Receta (Bill of Materials)")
+        st.markdown("### 📋 Desglose de Receta (BOM)")
         tabla_out = receta_prod[
             [
                 "Código Insumo",
@@ -407,8 +475,8 @@ if vista == "🔎 Análisis por Producto":
                 showlegend=False,
                 margin=dict(l=10, r=40, t=20, b=10),
                 height=340,
-                paper_bgcolor="#0E1117",
-                plot_bgcolor="#0E1117",
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
                 xaxis_title="Costo ($)",
                 yaxis_title="",
                 coloraxis_showscale=False,
@@ -419,9 +487,18 @@ if vista == "🔎 Análisis por Producto":
 
 else:
     # ---------------------------------------------------------
-    # VISTA GENERAL DE LA COMPAÑÍA
+    # VISTA GENERAL DE COMPAÑÍA CON FILTRO DE MES
     # ---------------------------------------------------------
     st.title("🌐 Visión General Consolidada")
+
+    st.markdown(
+        f"""
+        <div class="month-banner">
+            📅 Consolidados correspondientes al <strong>Mes de Venta: {mes_seleccionado}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     costo_por_art = (
         receta_precios.groupby("Cod. Venta")["Costo Insumo ($)"]
@@ -433,7 +510,7 @@ else:
     )
 
     df_ventas_merged = pd.merge(
-        df_ventas, costo_por_art, on="Cod. Venta", how="left"
+        df_ventas_filt, costo_por_art, on="Cod. Venta", how="left"
     )
     df_ventas_merged["Costo Unitario ($)"] = df_ventas_merged[
         "Costo Unitario ($)"
@@ -481,7 +558,9 @@ else:
     with col_g_left:
         st.markdown("### 🌳 Insumos de Mayor Impacto Global")
         df_global_insumos = pd.merge(
-            df_receta, df_ventas[["Cod. Venta", "Físicos"]], on="Cod. Venta"
+            df_receta,
+            df_ventas_filt[["Cod. Venta", "Físicos"]],
+            on="Cod. Venta",
         )
         df_global_insumos = pd.merge(
             df_global_insumos,
@@ -514,8 +593,8 @@ else:
         fig_tree.update_layout(
             margin=dict(l=10, r=10, t=30, b=10),
             height=380,
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#0E1117",
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
         )
         st.plotly_chart(
             fig_tree, use_container_width=True, config=plotly_config
@@ -548,8 +627,8 @@ else:
             showlegend=False,
             height=380,
             margin=dict(l=10, r=10, t=30, b=10),
-            paper_bgcolor="#0E1117",
-            plot_bgcolor="#0E1117",
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
             xaxis_title="",
             yaxis_title="",
         )
