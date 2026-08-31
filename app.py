@@ -22,7 +22,7 @@ st.markdown(
             background-color: #0B0E14;
             color: #E2E8F0;
         }
-        
+
         .block-container {
             padding-top: 1.2rem !important;
             padding-bottom: 2rem !important;
@@ -151,7 +151,6 @@ def load_data():
 
 df_ventas, df_receta, df_precios, receta_precios = load_data()
 
-
 def draw_kpi(title, value, sub="", color_class=""):
     val_class = f"kpi-value {color_class}".strip()
     sub_html = f'<div class="kpi-sub">{sub}</div>' if sub else ""
@@ -207,14 +206,10 @@ locacion_seleccionada = st.sidebar.selectbox(
 # Aplicar Filtros Globales a Ventas
 df_ventas_filt = df_ventas.copy()
 if mes_seleccionado != "Todos los Meses":
-    df_ventas_filt = df_ventas_filt[
-        df_ventas_filt["Mes_Venta"] == mes_seleccionado
-    ]
+    df_ventas_filt = df_ventas_filt[df_ventas_filt["Mes_Venta"] == mes_seleccionado]
 
 if locacion_seleccionada != "Todas las Locaciones":
-    df_ventas_filt = df_ventas_filt[
-        df_ventas_filt["LOCACION - SAP"] == locacion_seleccionada
-    ]
+    df_ventas_filt = df_ventas_filt[df_ventas_filt["LOCACION - SAP"] == locacion_seleccionada]
 
 st.sidebar.divider()
 
@@ -651,3 +646,93 @@ else:
         st.plotly_chart(
             fig_top, use_container_width=True, config=plotly_config
         )
+
+    if mes_seleccionado == "Todos los Meses":
+        st.divider()
+        st.markdown("### 📈 Tendencia Mensual de Ventas y Costos")
+
+        # Aggregate data for monthly trends, respecting location filter
+        monthly_trends = (
+            df_ventas_filt.groupby("Mes_Venta")
+            [["Facturación Neta", "TOTAL INSUMOS"]]
+            .sum()
+            .reset_index()
+        )
+
+        # Ensure Mes_Venta is sorted correctly if it's not already
+        monthly_trends["Mes_Venta"] = pd.to_datetime(monthly_trends["Mes_Venta"])
+        monthly_trends = monthly_trends.sort_values("Mes_Venta")
+
+        fig_monthly_trend = px.line(
+            monthly_trends,
+            x="Mes_Venta",
+            y=["Facturación Neta", "TOTAL INSUMOS"],
+            template="plotly_dark",
+            title="Evolución Mensual de Facturación Neta vs. Costo de Insumos",
+            labels={
+                "value": "Importe ($)",
+                "Mes_Venta": "Mes",
+                "variable": "Métrica"
+            },
+            color_discrete_map={
+                "Facturación Neta": "#4ADE80",
+                "TOTAL INSUMOS": "#FBBF24",
+            },
+        )
+        fig_monthly_trend.update_traces(mode='lines+markers')
+        fig_monthly_trend.update_layout(
+            hovermode="x unified",
+            margin=dict(l=10, r=10, t=35, b=10),
+            height=400,
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            xaxis_title="",
+            yaxis_title="",
+            legend_title="",
+        )
+        st.plotly_chart(fig_monthly_trend, use_container_width=True, config=plotly_config)
+
+        if vista == "🌐 Visión General de Compañía" and mes_seleccionado == "Todos los Meses":
+    st.divider()
+    st.markdown("### 📈 Tendencia Mensual de Ventas y Costos")
+    
+    # Aggregate data for monthly trends, respecting location filter
+    monthly_trends = (
+        df_ventas_filt.groupby("Mes_Venta")
+        [["Facturación Neta", "TOTAL INSUMOS"]]
+        .sum()
+        .reset_index()
+    )
+
+    # Ensure Mes_Venta is sorted correctly if it's not already
+    monthly_trends["Mes_Venta"] = pd.to_datetime(monthly_trends["Mes_Venta"])
+    monthly_trends = monthly_trends.sort_values("Mes_Venta")
+
+    fig_monthly_trend = px.line(
+        monthly_trends,
+        x="Mes_Venta",
+        y=["Facturación Neta", "TOTAL INSUMOS"],
+        template="plotly_dark",
+        title="Evolución Mensual de Facturación Neta vs. Costo de Insumos",
+        labels={
+            "value": "Importe ($)",
+            "Mes_Venta": "Mes",
+            "variable": "Métrica"
+        },
+        color_discrete_map={
+            "Facturación Neta": "#4ADE80",
+            "TOTAL INSUMOS": "#FBBF24",
+        },
+    )
+    fig_monthly_trend.update_traces(mode='lines+markers')
+    fig_monthly_trend.update_layout(
+        hovermode="x unified",
+        margin=dict(l=10, r=10, t=35, b=10),
+        height=400,
+        paper_bgcolor="#0B0E14",
+        plot_bgcolor="#0B0E14",
+        xaxis_title="",
+        yaxis_title="",
+        legend_title="",
+    )
+    st.plotly_chart(fig_monthly_trend, use_container_width=True, config=plotly_config)
