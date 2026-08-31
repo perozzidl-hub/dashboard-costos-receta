@@ -13,11 +13,12 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS AVANZADOS (DARK MODE & TABLAS ELEGANTES)
+# ESTILOS CSS AVANZADOS (CONTRASTE EN SIDEBAR Y MODO OSCURO)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
+        /* Fondo General Dark Mode */
         .stApp {
             background-color: #0B0E14;
             color: #E2E8F0;
@@ -30,6 +31,7 @@ st.markdown(
             padding-right: 1.5rem !important;
         }
 
+        /* BANNER INFORMATIVO */
         .month-banner {
             background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%);
             border-left: 4px solid #38BDF8;
@@ -43,6 +45,35 @@ st.markdown(
             color: #38BDF8;
         }
 
+        /* CORRECCIÓN DE CONTRASTE EN SIDEBAR (LETRAS CLARAS Y VISIBLES) */
+        section[data-testid="stSidebar"] {
+            background-color: #0F172A !important;
+            border-right: 1px solid #1E293B;
+        }
+
+        section[data-testid="stSidebar"] h1,
+        section[data-testid="stSidebar"] h2,
+        section[data-testid="stSidebar"] h3,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] label {
+            color: #F8FAFC !important;
+            font-weight: 600 !important;
+        }
+
+        section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] {
+            background-color: #1E293B !important;
+            color: #FFFFFF !important;
+            border: 1px solid #475569 !important;
+            border-radius: 8px;
+        }
+
+        section[data-testid="stSidebar"] div[role="radiogroup"] label span {
+            color: #F1F5F9 !important;
+            font-size: 0.95rem !important;
+        }
+
+        /* TARJETAS DE KPIS REORGANIZADAS */
         .kpi-card {
             background: linear-gradient(135deg, #1E293B 0%, #111827 100%);
             border: 1px solid #334155;
@@ -79,16 +110,18 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        [data-testid="stDataFrame"] {
+        /* ELIMINACIÓN DEFINITIVA DE FONDOS BLANCOS EN TABLAS Y DATAFRAMES */
+        [data-testid="stDataFrame"], 
+        [data-testid="stDataFrame"] > div,
+        div[data-testid="stTable"] {
             background-color: #1E293B !important;
+            color: #F8FAFC !important;
             border-radius: 8px;
-            border: 1px solid #334155;
-            padding: 6px;
+            border: 1px solid #334155 !important;
         }
 
-        section[data-testid="stSidebar"] {
-            background-color: #0F172A;
-            border-right: 1px solid #1E293B;
+        iframe {
+            color-scheme: dark !important;
         }
     </style>
 """,
@@ -105,17 +138,14 @@ def load_data():
     df_receta = pd.read_excel("RECETA.xlsx")
     df_precios = pd.read_excel("PRECIOS.xlsx")
 
-    # Renombrar código de producto si aplica
     df_ventas.rename(columns={"ART": "Cod. Venta"}, inplace=True)
 
-    # Extraer formato de fecha/mes
     if "FECHA" in df_ventas.columns:
         df_ventas["FECHA"] = pd.to_datetime(df_ventas["FECHA"], errors="coerce")
         df_ventas["Mes_Venta"] = df_ventas["FECHA"].dt.strftime("%Y-%m")
     else:
         df_ventas["Mes_Venta"] = "Sin Fecha"
 
-    # Conversión numérica
     for df in [df_ventas, df_receta]:
         df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
 
@@ -127,7 +157,6 @@ def load_data():
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
     df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
 
-    # Asegurar columna TOTAL INSUMOS
     if "TOTAL INSUMOS" not in df_ventas.columns:
         df_ventas["TOTAL INSUMOS"] = 0.0
     else:
@@ -135,7 +164,6 @@ def load_data():
             df_ventas["TOTAL INSUMOS"], errors="coerce"
         ).fillna(0.0)
 
-    # Cruce Receta + Precios
     receta_precios = pd.merge(
         df_receta,
         df_precios[["Código Insumo", "Descripción", "Precio Compra"]],
@@ -173,7 +201,7 @@ def truncate_text(text, max_len=26):
 plotly_config = {"responsive": True, "displayModeBar": False}
 
 # ---------------------------------------------------------
-# SIDEBAR / FILTROS DE MES Y LOCACIÓN-SAP
+# SIDEBAR / FILTROS DE MES Y LOCACIÓN-SAP CON ALTO CONTRASTE
 # ---------------------------------------------------------
 st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
@@ -184,14 +212,12 @@ vista = st.sidebar.radio(
 st.sidebar.divider()
 st.sidebar.header("🗓️ Filtros Globales")
 
-# 1. Filtro Mes
 meses_disponibles = sorted(
     list(set(df_ventas["Mes_Venta"].dropna().unique()))
 )
 opciones_mes = ["Todos los Meses"] + [m for m in meses_disponibles if m != ""]
 mes_seleccionado = st.sidebar.selectbox("Mes de Venta:", opciones_mes)
 
-# 2. Filtro Locación SAP
 locaciones_disponibles = sorted(
     [
         str(loc)
@@ -204,7 +230,6 @@ locacion_seleccionada = st.sidebar.selectbox(
     "Locación - SAP:", opciones_locacion
 )
 
-# Aplicar Filtros Globales a Ventas
 df_ventas_filt = df_ventas.copy()
 if mes_seleccionado != "Todos los Meses":
     df_ventas_filt = df_ventas_filt[
@@ -237,11 +262,10 @@ if vista == "🔎 Análisis por Producto":
     cod_art = opciones_dict[item_seleccionado]
     nombre_art = item_seleccionado.split(" - ")[1]
 
-    # Datos Receta Teórica por Producto
+    # Cálculos por Producto
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
     costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
 
-    # Ventas filtradas del Producto
     ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
 
     volumen_unid = (
@@ -258,9 +282,7 @@ if vista == "🔎 Análisis por Producto":
         else 0
     )
 
-    # COSTO DE INSUMOS DIRECTO DE LA COLUMNA DE VENTAS EXCEL
     costo_insumos_excel = ventas_prod["TOTAL INSUMOS"].sum()
-
     contribucion_marg = fact_neta - costo_insumos_excel
     pct_margen = (
         (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
@@ -269,7 +291,7 @@ if vista == "🔎 Análisis por Producto":
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
 
     # ---------------------------------------------------------
-    # ENCABEZADO Y KPIS CORREGIDOS
+    # ENCABEZADO Y KPIS REORGANIZADOS SEGÚN EL NUEVO CRITERIO
     # ---------------------------------------------------------
     st.title(f"📦 {nombre_art}")
 
@@ -282,66 +304,66 @@ if vista == "🔎 Análisis por Producto":
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        draw_kpi("Facturación Neta", f"${fact_neta:,.2f}")
-    with col2:
-        # COSTO DE INSUMOS COINCIDENTE CON EXCEL DE VENTAS
+    st.markdown("### 🚀 Indicadores Clave Agrupados")
+
+    # FILA 1: TOTALES GLOBALES DEL PRODUCTO
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        draw_kpi("1. Facturación Neta", f"${fact_neta:,.2f}")
+    with c2:
         draw_kpi(
-            "Costo de Insumos",
+            "2. Costo de Insumos",
             f"${costo_insumos_excel:,.2f}",
             color_class="kpi-warning",
         )
-    with col3:
+    with c3:
         draw_kpi(
-            "Margen Contribución",
-            f"{pct_margen:.1f}%",
-            sub=f"+${contribucion_marg:,.0f}",
+            "3. Contribución Marg. ($)",
+            f"${contribucion_marg:,.2f}",
+            color_class="kpi-neutral",
         )
-    with col4:
+    with c4:
+        draw_kpi(
+            "4. Contribución Marg. (%)",
+            f"{pct_margen:.1f}%",
+            sub="Margen Sobre Neta",
+        )
+
+    # FILA 2: INDICADORES UNITARIOS Y COMPLEMENTARIOS
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
+        draw_kpi(
+            "5. Facturación Unit. Prod.",
+            f"${precio_prom_unit:,.2f}",
+            color_class="kpi-neutral",
+        )
+    with c6:
+        draw_kpi(
+            "6. Costo Unit. Prod. (Teórico)",
+            f"${costo_unitario_teorico:,.2f}",
+            color_class="kpi-warning",
+        )
+    with c7:
         draw_kpi(
             "Volumen Vendido",
             f"{volumen_unid:,.0f} u.",
             color_class="kpi-neutral",
         )
-    with col5:
-        draw_kpi(
-            "Costo Teórico Unit.",
-            f"${costo_unitario_teorico:,.2f}",
-            color_class="kpi-warning",
-        )
-
-    col6, col7, col8, col9 = st.columns(4)
-    with col6:
-        draw_kpi(
-            "Precio Prom. Real",
-            f"${precio_prom_unit:,.2f}",
-            color_class="kpi-neutral",
-        )
-    with col7:
-        draw_kpi("Facturación Lista", f"${fact_lista:,.2f}")
-    with col8:
+    with c8:
         draw_kpi(
             "Descuento Comercial",
             f"${descuento_comercial:,.2f}",
             color_class="kpi-warning",
         )
-    with col9:
-        draw_kpi(
-            "Insumos en Receta",
-            f"{len(receta_prod)} Insumos",
-            color_class="kpi-neutral",
-        )
 
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS CON SUMATORIAS E IMPORTES TOTALES
+    # GRÁFICOS CON FONDOS OSCUROS Y TOTALES
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición de Insumos e Importes Totales")
     col_g1, col_g2 = st.columns([3, 2])
 
-    # Sumatoria total del gráfico actual
     total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
     with col_g1:
@@ -362,7 +384,7 @@ if vista == "🔎 Análisis por Producto":
                 template="plotly_dark",
                 color="Costo Insumo ($)",
                 color_continuous_scale="Viridis",
-                title=f"Desglose por Insumo (Total Receta Unit.: ${total_costo_grafico:,.2f})",
+                title=f"Desglose por Insumo (Total Unit.: ${total_costo_grafico:,.2f})",
             )
             fig_bar.update_traces(
                 texttemplate="$%{x:,.2f}", textposition="outside"
@@ -395,12 +417,11 @@ if vista == "🔎 Análisis por Producto":
                 hole=0.48,
                 template="plotly_dark",
                 color_discrete_sequence=px.colors.qualitative.Bold,
-                title="Distribución Percentual de Costos",
+                title="Distribución % Insumos",
             )
             fig_pie.update_traces(
                 textposition="inside", textinfo="percent+label"
             )
-            # Anotación central con el importe total
             fig_pie.add_annotation(
                 text=f"<b>Total</b><br>${total_costo_grafico:,.2f}",
                 x=0.5,
@@ -423,7 +444,7 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM) CON FILA DE SUMATORIA TOTAL
+    # TABLA DESGLOSE (BOM) EN MODO OSCURO INTEGRADO
     # ---------------------------------------------------------
     col_t1, col_t2 = st.columns([3, 2])
 
@@ -452,7 +473,6 @@ if vista == "🔎 Análisis por Producto":
             "% Participación",
         ]
 
-        # Convertir a texto formateado y agregar Fila TOTAL
         tabla_out_formatted = tabla_out.copy()
         tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
             "Cant. Teórica"
@@ -467,7 +487,6 @@ if vista == "🔎 Análisis por Producto":
             "% Participación"
         ].apply(lambda x: f"{x:.1f}%")
 
-        # Fila Total
         fila_total = pd.DataFrame(
             [
                 {
@@ -526,7 +545,7 @@ if vista == "🔎 Análisis por Producto":
 
 else:
     # ---------------------------------------------------------
-    # VISTA GENERAL CON SENSITIVIDAD DE LOCACIÓN - SAP
+    # VISTA GENERAL DE COMPAÑÍA
     # ---------------------------------------------------------
     st.title("🌐 Visión General Consolidada de Compañía")
 
@@ -540,7 +559,6 @@ else:
     )
 
     tot_fact_neta = df_ventas_filt["Facturación Neta"].sum()
-    # COSTO DE INSUMOS DIRECTO DE COLUMNA TOTAL INSUMOS
     tot_costo_insumos = df_ventas_filt["TOTAL INSUMOS"].sum()
     tot_margen = tot_fact_neta - tot_costo_insumos
     tot_volumen = df_ventas_filt["Físicos"].sum()
@@ -550,22 +568,24 @@ else:
 
     gk1, gk2, gk3, gk4 = st.columns(4)
     with gk1:
-        draw_kpi("Facturación Global", f"${tot_fact_neta:,.2f}")
+        draw_kpi("1. Facturación Global", f"${tot_fact_neta:,.2f}")
     with gk2:
         draw_kpi(
-            "Costo de Insumos",
+            "2. Costo de Insumos",
             f"${tot_costo_insumos:,.2f}",
             color_class="kpi-warning",
         )
     with gk3:
         draw_kpi(
-            "Margen Bruto",
+            "3. Contribución Marg. ($)",
             f"${tot_margen:,.2f}",
-            sub=f"{pct_margen_global:.1f}% Margen",
+            color_class="kpi-neutral",
         )
     with gk4:
         draw_kpi(
-            "Volumen Total", f"{tot_volumen:,.0f} u.", color_class="kpi-neutral"
+            "4. Contribución Marg. (%)",
+            f"{pct_margen_global:.1f}%",
+            sub="Margen Global",
         )
 
     st.divider()
