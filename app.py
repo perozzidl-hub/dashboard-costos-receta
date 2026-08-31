@@ -44,6 +44,17 @@ st.markdown(
             color: #38BDF8;
         }
 
+        /* BADGES DE TIPO PROD */
+        .type-badge {
+            background-color: #38BDF8;
+            color: #0F172A;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.82rem;
+            margin-left: 10px;
+        }
+
         /* SIDEBAR ALTO CONTRASTE */
         section[data-testid="stSidebar"] {
             background-color: #0F172A !important;
@@ -109,7 +120,7 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        /* ESTILO LEGIBLE Y VISIBLE PARA TABLAS HTML/STREAMLIT */
+        /* ESTILO LEGIBLE Y VISIBLE PARA TABLAS ST.TABLE */
         .stTable {
             background-color: #1E293B !important;
             border-radius: 8px;
@@ -152,6 +163,23 @@ def load_data():
         df_ventas["Mes_Venta"] = df_ventas["FECHA"].dt.strftime("%Y-%m")
     else:
         df_ventas["Mes_Venta"] = "Sin Fecha"
+
+    # Detección y normalización del tipo de producto (Propio / Reventa)
+    col_tipo = None
+    for col in df_ventas.columns:
+        if any(
+            k in str(col).lower()
+            for k in ["tipo", "origen", "propio", "reventa", "clasif"]
+        ):
+            col_tipo = col
+            break
+
+    if col_tipo:
+        df_ventas["Tipo_Producto"] = (
+            df_ventas[col_tipo].astype(str).str.strip()
+        )
+    else:
+        df_ventas["Tipo_Producto"] = "Propio / No Especificado"
 
     for df in [df_ventas, df_receta]:
         df["Cod. Venta"] = pd.to_numeric(df["Cod. Venta"], errors="coerce")
@@ -282,6 +310,14 @@ if vista == "🔎 Análisis por Producto":
     cod_art = opciones_dict[item_seleccionado]
     nombre_art = item_seleccionado.split(" - ")[1]
 
+    # Determinación Tipo Producto
+    ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
+    tipo_prod = (
+        ventas_prod_gen["Tipo_Producto"].iloc[0]
+        if not ventas_prod_gen.empty
+        else "Producto Propio"
+    )
+
     # Cálculos por Producto
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy()
     costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
@@ -313,12 +349,15 @@ if vista == "🔎 Análisis por Producto":
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
-    st.title(f"📦 {nombre_art}")
+    st.markdown(
+        f"<h1>📦 {nombre_art} <span class='type-badge'>{tipo_prod.upper()}</span></h1>",
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Código SAP: <strong>{cod_art}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Código SAP: <strong>{cod_art}</strong> | Categoría: <strong>{tipo_prod}</strong>
         </div>
         """,
         unsafe_allow_html=True,
@@ -368,16 +407,12 @@ if vista == "🔎 Análisis por Producto":
             color_class="kpi-neutral",
         )
     with c8:
-        draw_kpi(
-            "Descuento Comercial",
-            f"${descuento_comercial:,.2f}",
-            color_class="kpi-warning",
-        )
+        draw_kpi("Tipo de Producto", f"{tipo_prod}", color_class="kpi-neutral")
 
     st.divider()
 
     # ---------------------------------------------------------
-    # NUEVO GRÁFICO COMPARATIVO UNITARIO (FACTURACIÓN VS COSTO)
+    # COMPARATIVO UNITARIO (BARRAS DESCENDENTES)
     # ---------------------------------------------------------
     st.markdown("### ⚖️ Relación Facturación Unitaria vs. Costo Unitario")
 
@@ -419,6 +454,7 @@ if vista == "🔎 Análisis por Producto":
     fig_unit.update_traces(texttemplate="$%{x:,.2f}", textposition="outside")
     fig_unit.update_layout(
         showlegend=False,
+        yaxis={"categoryorder": "total ascending"},  # La barra mayor arriba
         margin=dict(l=10, r=60, t=35, b=10),
         height=220,
         paper_bgcolor="#0B0E14",
@@ -431,7 +467,7 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS DE INSUMOS (BARRAS DE MAYOR A MENOR & TORTA PORCENTUAL)
+    # BARRAS DESCENDENTES Y TORTA PORCENTUAL (LETRAS OSCURAS)
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición de Insumos e Importes Totales")
     col_g1, col_g2 = st.columns([3, 2])
@@ -439,7 +475,6 @@ if vista == "🔎 Análisis por Producto":
     total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
     if not receta_prod.empty:
-        # Orden de mayor a menor importe
         df_sorted_desc = receta_prod.sort_values(
             "Costo Insumo ($)", ascending=False
         ).copy()
@@ -454,13 +489,8 @@ if vista == "🔎 Análisis por Producto":
         }
 
         with col_g1:
-            # En barras horizontales plotly, para que el mayor quede ARRIBA se ordena ascending=True
-            df_bar_orient = df_sorted_desc.sort_values(
-                "Costo Insumo ($)", ascending=True
-            )
-
             fig_bar = px.bar(
-                df_bar_orient,
+                df_sorted_desc,
                 x="Costo Insumo ($)",
                 y="Insumo_Label",
                 orientation="h",
@@ -475,6 +505,9 @@ if vista == "🔎 Análisis por Producto":
             )
             fig_bar.update_layout(
                 showlegend=False,
+                yaxis={
+                    "categoryorder": "total ascending"
+                },  # Barra más grande siempre arriba
                 margin=dict(l=10, r=50, t=35, b=10),
                 height=380,
                 paper_bgcolor="#0B0E14",
@@ -497,11 +530,12 @@ if vista == "🔎 Análisis por Producto":
                 color_discrete_map=mapa_colores,
                 title="Distribución % Insumos",
             )
-            # Solo mostrar porcentajes en color blanco de alto contraste
+
+            # Porcentajes más grandes (size=16) y números con color oscuro (#0F172A)
             fig_pie.update_traces(
                 textposition="inside",
                 textinfo="percent",
-                insidetextfont=dict(color="#FFFFFF", size=13),
+                insidetextfont=dict(color="#0F172A", size=16, family="Arial Black"),
             )
             fig_pie.add_annotation(
                 text=f"<b>Total</b><br>${total_costo_grafico:,.2f}",
@@ -525,7 +559,7 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM) - VISIBILIDAD GARANTIZADA CON ST.TABLE
+    # TABLA DESGLOSE (BOM)
     # ---------------------------------------------------------
     st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
 
@@ -582,8 +616,6 @@ if vista == "🔎 Análisis por Producto":
     tabla_final = pd.concat(
         [tabla_out_formatted, fila_total], ignore_index=True
     )
-
-    # Renderizado estático 100% visible sin dependencias de canvas
     st.table(tabla_final)
 
 else:
@@ -604,7 +636,6 @@ else:
     tot_fact_neta = df_ventas_filt["Facturación Neta"].sum()
     tot_costo_insumos = df_ventas_filt["TOTAL INSUMOS"].sum()
     tot_margen = tot_fact_neta - tot_costo_insumos
-    tot_volumen = df_ventas_filt["Físicos"].sum()
     pct_margen_global = (
         (tot_margen / tot_fact_neta * 100) if tot_fact_neta > 0 else 0
     )
@@ -702,7 +733,9 @@ else:
             texttemplate="$%{x:,.2f}", textposition="outside"
         )
         fig_top.update_layout(
-            yaxis={"categoryorder": "total ascending"},
+            yaxis={
+                "categoryorder": "total ascending"
+            },  # Barra más grande arriba
             showlegend=False,
             height=380,
             margin=dict(l=10, r=40, t=35, b=10),
