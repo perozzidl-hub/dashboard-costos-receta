@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 # ---------------------------------------------------------
@@ -13,12 +14,11 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS AVANZADOS (INCLUYE OVERRIDE COMPLETO DE TABLAS STREAMLIT)
+# ESTILOS CSS AVANZADOS (TABLAS CLARAS Y ALTO CONTRASTE)
 # ---------------------------------------------------------
 st.markdown(
     """
     <style>
-        /* Fondo General Dark Mode */
         .stApp {
             background-color: #0B0E14;
             color: #E2E8F0;
@@ -31,7 +31,6 @@ st.markdown(
             padding-right: 1.5rem !important;
         }
 
-        /* BANNER INFORMATIVO */
         .month-banner {
             background: linear-gradient(90deg, #1E293B 0%, #0F172A 100%);
             border-left: 4px solid #38BDF8;
@@ -110,21 +109,26 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        /* ELIMINACIÓN TOTAL Y FORZADA DEL FONDO BLANCO EN ST.DATAFRAME */
-        [data-testid="stDataFrame"], 
-        [data-testid="stDataFrame"] > div,
-        [data-testid="stDataFrame"] iframe,
-        div[class*="stDataFrame"],
-        div[role="grid"] {
+        /* ESTILO LEGIBLE Y VISIBLE PARA TABLAS HTML/STREAMLIT */
+        .stTable {
             background-color: #1E293B !important;
-            color: #F8FAFC !important;
             border-radius: 8px;
             border: 1px solid #334155 !important;
         }
-
-        /* Fuerza celdas de tabla en modo oscuro */
-        div[data-testid="stDataFrame"] div[class*="glideDataGrid"] {
+        .stTable table {
+            color: #FFFFFF !important;
             background-color: #1E293B !important;
+        }
+        .stTable th {
+            background-color: #0F172A !important;
+            color: #38BDF8 !important;
+            font-size: 0.9rem !important;
+            border-bottom: 2px solid #334155 !important;
+        }
+        .stTable td {
+            color: #F8FAFC !important;
+            border-bottom: 1px solid #334155 !important;
+            font-size: 0.88rem !important;
         }
     </style>
 """,
@@ -203,7 +207,6 @@ def truncate_text(text, max_len=26):
 
 plotly_config = {"responsive": True, "displayModeBar": False}
 
-# PALETA CONSISTENTE PARA GRÁFICOS MATCHEADOS
 PALETA_COLORES = [
     "#38BDF8",
     "#4ADE80",
@@ -374,7 +377,61 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS CON COLORES IDENTICOS/MATCHEO EXACTO
+    # NUEVO GRÁFICO COMPARATIVO UNITARIO (FACTURACIÓN VS COSTO)
+    # ---------------------------------------------------------
+    st.markdown("### ⚖️ Relación Facturación Unitaria vs. Costo Unitario")
+
+    pct_costo_sobre_venta = (
+        (costo_unitario_teorico / precio_prom_unit * 100)
+        if precio_prom_unit > 0
+        else 0.0
+    )
+
+    df_unit_comp = pd.DataFrame(
+        [
+            {
+                "Concepto": "Facturación Unitaria Real",
+                "Monto ($)": precio_prom_unit,
+                "Tipo": "Facturación",
+            },
+            {
+                "Concepto": "Costo Insumos Unitario",
+                "Monto ($)": costo_unitario_teorico,
+                "Tipo": "Costo",
+            },
+        ]
+    )
+
+    fig_unit = px.bar(
+        df_unit_comp,
+        x="Monto ($)",
+        y="Concepto",
+        orientation="h",
+        text="Monto ($)",
+        template="plotly_dark",
+        color="Tipo",
+        color_discrete_map={
+            "Facturación": "#4ADE80",
+            "Costo": "#FBBF24",
+        },
+        title=f"Representación del Costo sobre Facturación Unitaria: {pct_costo_sobre_venta:.1f}%",
+    )
+    fig_unit.update_traces(texttemplate="$%{x:,.2f}", textposition="outside")
+    fig_unit.update_layout(
+        showlegend=False,
+        margin=dict(l=10, r=60, t=35, b=10),
+        height=220,
+        paper_bgcolor="#0B0E14",
+        plot_bgcolor="#0B0E14",
+        xaxis_title="",
+        yaxis_title="",
+    )
+    st.plotly_chart(fig_unit, use_container_width=True, config=plotly_config)
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # GRÁFICOS DE INSUMOS (BARRAS DE MAYOR A MENOR & TORTA PORCENTUAL)
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición de Insumos e Importes Totales")
     col_g1, col_g2 = st.columns([3, 2])
@@ -382,23 +439,28 @@ if vista == "🔎 Análisis por Producto":
     total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
     if not receta_prod.empty:
-        # MAPEO DE COLORES UNIFICADO POR INSUMO
-        df_sorted = receta_prod.sort_values(
+        # Orden de mayor a menor importe
+        df_sorted_desc = receta_prod.sort_values(
             "Costo Insumo ($)", ascending=False
         ).copy()
-        df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
+        df_sorted_desc["Insumo_Label"] = df_sorted_desc["Descripción"].apply(
             lambda x: truncate_text(x, 26)
         )
 
-        insumos_unicos = df_sorted["Insumo_Label"].tolist()
+        insumos_unicos = df_sorted_desc["Insumo_Label"].tolist()
         mapa_colores = {
             insumo: PALETA_COLORES[i % len(PALETA_COLORES)]
             for i, insumo in enumerate(insumos_unicos)
         }
 
         with col_g1:
+            # En barras horizontales plotly, para que el mayor quede ARRIBA se ordena ascending=True
+            df_bar_orient = df_sorted_desc.sort_values(
+                "Costo Insumo ($)", ascending=True
+            )
+
             fig_bar = px.bar(
-                df_sorted.sort_values("Costo Insumo ($)", ascending=True),
+                df_bar_orient,
                 x="Costo Insumo ($)",
                 y="Insumo_Label",
                 orientation="h",
@@ -413,7 +475,7 @@ if vista == "🔎 Análisis por Producto":
             )
             fig_bar.update_layout(
                 showlegend=False,
-                margin=dict(l=10, r=45, t=35, b=10),
+                margin=dict(l=10, r=50, t=35, b=10),
                 height=380,
                 paper_bgcolor="#0B0E14",
                 plot_bgcolor="#0B0E14",
@@ -426,7 +488,7 @@ if vista == "🔎 Análisis por Producto":
 
         with col_g2:
             fig_pie = px.pie(
-                df_sorted,
+                df_sorted_desc,
                 names="Insumo_Label",
                 values="Costo Insumo ($)",
                 hole=0.48,
@@ -435,8 +497,11 @@ if vista == "🔎 Análisis por Producto":
                 color_discrete_map=mapa_colores,
                 title="Distribución % Insumos",
             )
+            # Solo mostrar porcentajes en color blanco de alto contraste
             fig_pie.update_traces(
-                textposition="inside", textinfo="percent+label"
+                textposition="inside",
+                textinfo="percent",
+                insidetextfont=dict(color="#FFFFFF", size=13),
             )
             fig_pie.add_annotation(
                 text=f"<b>Total</b><br>${total_costo_grafico:,.2f}",
@@ -460,7 +525,7 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM) ANCHO COMPLETO SIN FONDO BLANCO
+    # TABLA DESGLOSE (BOM) - VISIBILIDAD GARANTIZADA CON ST.TABLE
     # ---------------------------------------------------------
     st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
 
@@ -518,8 +583,8 @@ if vista == "🔎 Análisis por Producto":
         [tabla_out_formatted, fila_total], ignore_index=True
     )
 
-    # Renderizado en ancho completo
-    st.dataframe(tabla_final, use_container_width=True, height=360)
+    # Renderizado estático 100% visible sin dependencias de canvas
+    st.table(tabla_final)
 
 else:
     # ---------------------------------------------------------
