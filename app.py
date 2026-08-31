@@ -192,13 +192,30 @@ def load_data():
             )
 
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
-    
-    if "TOTAL INSUMOS" not in df_ventas.columns:
-        df_ventas["TOTAL INSUMOS"] = 0.0
-    else:
+
+    # Conversiones numéricas de costos en VENTAS
+    if "TOTAL INSUMOS" in df_ventas.columns:
         df_ventas["TOTAL INSUMOS"] = pd.to_numeric(
             df_ventas["TOTAL INSUMOS"], errors="coerce"
         ).fillna(0.0)
+    else:
+        df_ventas["TOTAL INSUMOS"] = 0.0
+
+    if "TOTAL PRODUCTO TERCEROS" in df_ventas.columns:
+        df_ventas["TOTAL PRODUCTO TERCEROS"] = pd.to_numeric(
+            df_ventas["TOTAL PRODUCTO TERCEROS"], errors="coerce"
+        ).fillna(0.0)
+    else:
+        df_ventas["TOTAL PRODUCTO TERCEROS"] = 0.0
+
+    # LÓGICA DE COSTO UNIFICADO EN VENTAS:
+    # Si Tipo_Producto es 'R', usará TOTAL PRODUCTO TERCEROS. Si es 'P', usará TOTAL INSUMOS.
+    df_ventas["COSTO_TOTAL_REAL"] = df_ventas.apply(
+        lambda r: r["TOTAL PRODUCTO TERCEROS"]
+        if r["Tipo_Producto"] == "R"
+        else r["TOTAL INSUMOS"],
+        axis=1,
+    )
 
     if not df_receta.empty and "Cod. Venta" in df_receta.columns and "Código Insumo" in df_receta.columns:
         df_receta = df_receta.dropna(subset=["Cod. Venta", "Código Insumo"])
@@ -320,7 +337,6 @@ st.sidebar.divider()
 if vista == "🔎 Análisis por Producto":
     st.sidebar.header("📦 Seleccionar Producto")
 
-    # CORRECCIÓN CLAVE: Extraer directamente de la tabla de VENTAS filtrada para incluir productos 'R' sin receta.
     col_nombre_art = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
     articulos_df = (
         df_ventas_filt[["Cod. Venta", col_nombre_art]]
@@ -345,27 +361,12 @@ if vista == "🔎 Análisis por Producto":
         st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
 
-    # Determinación Tipo Producto
     ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
     tipo_prod = (
         ventas_prod_gen["Tipo_Producto"].iloc[0]
         if not ventas_prod_gen.empty
         else "P"
     )
-
-    # Cálculos por Producto
-    receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
-    
-    # Manejo dinámico de costo unitario según si tiene receta o si es reventa
-    if not receta_prod.empty:
-        costo_unitario_teorico = receta_prod["Costo Insumo ($)"].sum()
-    else:
-        # Si es Reventa (R) se intenta obtener el costo desde PRECIOS.xlsx usando Cod. Venta como Código Insumo
-        precio_match = df_precios[df_precios["Código Insumo"] == cod_art] if "Código Insumo" in df_precios.columns else pd.DataFrame()
-        if not precio_match.empty and "Precio Compra" in precio_match.columns:
-            costo_unitario_teorico = precio_match["Precio Compra"].iloc[0]
-        else:
-            costo_unitario_teorico = 0.0
 
     ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
 
@@ -383,13 +384,15 @@ if vista == "🔎 Análisis por Producto":
         else 0
     )
 
-    costo_insumos_excel = ventas_prod["TOTAL INSUMOS"].sum()
-    contribucion_marg = fact_neta - costo_insumos_excel
+    # Selección automática del costo según tipo de producto
+    costo_total_calculado = ventas_prod["COSTO_TOTAL_REAL"].sum()
+    
+    contribucion_marg = fact_neta - costo_total_calculado
     pct_margen = (
         (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
     )
-    descuento_comercial = fact_lista - fact_neta
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
+    costo_unitario_real = (costo_total_calculado / volumen_unid) if volumen_unid > 0 else 0.0
 
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
@@ -410,13 +413,15 @@ if vista == "🔎 Análisis por Producto":
 
     st.markdown("### 🚀 Indicadores Clave Agrupados")
 
+    etiqueta_costo = "2. Costo de Terceros" if tipo_prod == "R" else "2. Costo de Insumos"
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         draw_kpi("1. Facturación Neta", f"${fact_neta:,.2f}")
     with c2:
         draw_kpi(
-            "2. Costo de Insumos",
-            f"${costo_insumos_excel:,.2f}",
+            etiqueta_costo,
+            f"${costo_total_calculado:,.2f}",
             color_class="kpi-warning",
         )
     with c3:
@@ -441,8 +446,8 @@ if vista == "🔎 Análisis por Producto":
         )
     with c6:
         draw_kpi(
-            "6. Costo Unit. Prod. (Teórico)",
-            f"${costo_unitario_teorico:,.2f}",
+            "6. Costo Unitario Real",
+            f"${costo_unitario_real:,.2f}",
             color_class="kpi-warning",
         )
     with c7:
@@ -462,7 +467,7 @@ if vista == "🔎 Análisis por Producto":
     st.markdown("### ⚖️ Relación Facturación Unitaria vs. Costo Unitario")
 
     pct_costo_sobre_venta = (
-        (costo_unitario_teorico / precio_prom_unit * 100)
+        (costo_unitario_real / precio_prom_unit * 100)
         if precio_prom_unit > 0
         else 0.0
     )
@@ -475,8 +480,8 @@ if vista == "🔎 Análisis por Producto":
                 "Tipo": "Facturación",
             },
             {
-                "Concepto": "Costo Insumos Unitario",
-                "Monto ($)": costo_unitario_teorico,
+                "Concepto": "Costo Unitario Real",
+                "Monto ($)": costo_unitario_real,
                 "Tipo": "Costo",
             },
         ]
@@ -512,11 +517,12 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # BARRAS DESCENDENTES Y TORTA PORCENTUAL / BOM
+    # COMPOSICIÓN Y TABLAS
     # ---------------------------------------------------------
-    st.markdown("### 📊 Composición de Insumos e Importes Totales")
+    receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
 
-    if not receta_prod.empty:
+    if tipo_prod == "P" and not receta_prod.empty:
+        st.markdown("### 📊 Composición de Insumos e Importes Totales")
         total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
         col_g1, col_g2 = st.columns([3, 2])
 
@@ -656,7 +662,7 @@ if vista == "🔎 Análisis por Producto":
         )
         st.table(tabla_final)
     else:
-        st.info("ℹ️ Este producto se clasifica como Reventa o no posee desglose de receta (BOM). Su costo unitario se calcula directamente por costo de adquisición/reventa.")
+        st.info("ℹ️ **Producto de Reventa (R)**: El costo total proviene directamente de la columna **TOTAL PRODUCTO TERCEROS** en el registro de ventas.")
 
 else:
     # ---------------------------------------------------------
@@ -674,8 +680,8 @@ else:
     )
 
     tot_fact_neta = df_ventas_filt["Facturación Neta"].sum()
-    tot_costo_insumos = df_ventas_filt["TOTAL INSUMOS"].sum()
-    tot_margen = tot_fact_neta - tot_costo_insumos
+    tot_costo_global = df_ventas_filt["COSTO_TOTAL_REAL"].sum()
+    tot_margen = tot_fact_neta - tot_costo_global
     pct_margen_global = (
         (tot_margen / tot_fact_neta * 100) if tot_fact_neta > 0 else 0
     )
@@ -685,8 +691,8 @@ else:
         draw_kpi("1. Facturación Global", f"${tot_fact_neta:,.2f}")
     with gk2:
         draw_kpi(
-            "2. Costo de Insumos",
-            f"${tot_costo_insumos:,.2f}",
+            "2. Costo Total (Insumos + Terceros)",
+            f"${tot_costo_global:,.2f}",
             color_class="kpi-warning",
         )
     with gk3:
@@ -707,29 +713,29 @@ else:
     col_g_left, col_g_right = st.columns(2)
 
     with col_g_left:
-        st.markdown("### 📍 Ventas y Costo de Insumos por Locación SAP")
+        st.markdown("### 📍 Ventas y Costo Total por Locación SAP")
         loc_summary = (
             df_ventas_filt.groupby("LOCACION - SAP")[
-                ["Facturación Neta", "TOTAL INSUMOS"]
+                ["Facturación Neta", "COSTO_TOTAL_REAL"]
             ]
             .sum()
             .reset_index()
         )
         loc_summary.rename(
-            columns={"TOTAL INSUMOS": "Costo de Insumos"}, inplace=True
+            columns={"COSTO_TOTAL_REAL": "Costo Total"}, inplace=True
         )
 
         fig_loc = px.bar(
             loc_summary,
             x="LOCACION - SAP",
-            y=["Facturación Neta", "Costo de Insumos"],
+            y=["Facturación Neta", "Costo Total"],
             barmode="group",
             template="plotly_dark",
             color_discrete_map={
                 "Facturación Neta": "#4ADE80",
-                "Costo de Insumos": "#FBBF24",
+                "Costo Total": "#FBBF24",
             },
-            title=f"Comparativo Facturación vs Insumos (Total: ${tot_fact_neta:,.2f})",
+            title=f"Comparativo Facturación vs Costos (Total: ${tot_fact_neta:,.2f})",
         )
         fig_loc.update_layout(
             margin=dict(l=10, r=10, t=35, b=10),
