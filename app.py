@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS AVANZADOS (CONTRASTE EN SIDEBAR Y MODO OSCURO)
+# ESTILOS CSS AVANZADOS (INCLUYE OVERRIDE COMPLETO DE TABLAS STREAMLIT)
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -45,7 +45,7 @@ st.markdown(
             color: #38BDF8;
         }
 
-        /* CORRECCIÓN DE CONTRASTE EN SIDEBAR (LETRAS CLARAS Y VISIBLES) */
+        /* SIDEBAR ALTO CONTRASTE */
         section[data-testid="stSidebar"] {
             background-color: #0F172A !important;
             border-right: 1px solid #1E293B;
@@ -73,7 +73,7 @@ st.markdown(
             font-size: 0.95rem !important;
         }
 
-        /* TARJETAS DE KPIS REORGANIZADAS */
+        /* TARJETAS DE KPIS */
         .kpi-card {
             background: linear-gradient(135deg, #1E293B 0%, #111827 100%);
             border: 1px solid #334155;
@@ -110,18 +110,21 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        /* ELIMINACIÓN DEFINITIVA DE FONDOS BLANCOS EN TABLAS Y DATAFRAMES */
+        /* ELIMINACIÓN TOTAL Y FORZADA DEL FONDO BLANCO EN ST.DATAFRAME */
         [data-testid="stDataFrame"], 
         [data-testid="stDataFrame"] > div,
-        div[data-testid="stTable"] {
+        [data-testid="stDataFrame"] iframe,
+        div[class*="stDataFrame"],
+        div[role="grid"] {
             background-color: #1E293B !important;
             color: #F8FAFC !important;
             border-radius: 8px;
             border: 1px solid #334155 !important;
         }
 
-        iframe {
-            color-scheme: dark !important;
+        /* Fuerza celdas de tabla en modo oscuro */
+        div[data-testid="stDataFrame"] div[class*="glideDataGrid"] {
+            background-color: #1E293B !important;
         }
     </style>
 """,
@@ -200,8 +203,22 @@ def truncate_text(text, max_len=26):
 
 plotly_config = {"responsive": True, "displayModeBar": False}
 
+# PALETA CONSISTENTE PARA GRÁFICOS MATCHEADOS
+PALETA_COLORES = [
+    "#38BDF8",
+    "#4ADE80",
+    "#FBBF24",
+    "#F43F5E",
+    "#A855F7",
+    "#EC4899",
+    "#6366F1",
+    "#14B8A6",
+    "#F97316",
+    "#8B5CF6",
+]
+
 # ---------------------------------------------------------
-# SIDEBAR / FILTROS DE MES Y LOCACIÓN-SAP CON ALTO CONTRASTE
+# SIDEBAR / FILTROS
 # ---------------------------------------------------------
 st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
@@ -291,7 +308,7 @@ if vista == "🔎 Análisis por Producto":
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
 
     # ---------------------------------------------------------
-    # ENCABEZADO Y KPIS REORGANIZADOS SEGÚN EL NUEVO CRITERIO
+    # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
     st.title(f"📦 {nombre_art}")
 
@@ -306,7 +323,6 @@ if vista == "🔎 Análisis por Producto":
 
     st.markdown("### 🚀 Indicadores Clave Agrupados")
 
-    # FILA 1: TOTALES GLOBALES DEL PRODUCTO
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         draw_kpi("1. Facturación Neta", f"${fact_neta:,.2f}")
@@ -329,7 +345,6 @@ if vista == "🔎 Análisis por Producto":
             sub="Margen Sobre Neta",
         )
 
-    # FILA 2: INDICADORES UNITARIOS Y COMPLEMENTARIOS
     c5, c6, c7, c8 = st.columns(4)
     with c5:
         draw_kpi(
@@ -359,31 +374,38 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # GRÁFICOS CON FONDOS OSCUROS Y TOTALES
+    # GRÁFICOS CON COLORES IDENTICOS/MATCHEO EXACTO
     # ---------------------------------------------------------
     st.markdown("### 📊 Composición de Insumos e Importes Totales")
     col_g1, col_g2 = st.columns([3, 2])
 
     total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
 
-    with col_g1:
-        if not receta_prod.empty:
-            df_sorted = receta_prod.sort_values(
-                "Costo Insumo ($)", ascending=True
-            ).copy()
-            df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
-                lambda x: truncate_text(x, 26)
-            )
+    if not receta_prod.empty:
+        # MAPEO DE COLORES UNIFICADO POR INSUMO
+        df_sorted = receta_prod.sort_values(
+            "Costo Insumo ($)", ascending=False
+        ).copy()
+        df_sorted["Insumo_Label"] = df_sorted["Descripción"].apply(
+            lambda x: truncate_text(x, 26)
+        )
 
+        insumos_unicos = df_sorted["Insumo_Label"].tolist()
+        mapa_colores = {
+            insumo: PALETA_COLORES[i % len(PALETA_COLORES)]
+            for i, insumo in enumerate(insumos_unicos)
+        }
+
+        with col_g1:
             fig_bar = px.bar(
-                df_sorted,
+                df_sorted.sort_values("Costo Insumo ($)", ascending=True),
                 x="Costo Insumo ($)",
                 y="Insumo_Label",
                 orientation="h",
                 text="Costo Insumo ($)",
                 template="plotly_dark",
-                color="Costo Insumo ($)",
-                color_continuous_scale="Viridis",
+                color="Insumo_Label",
+                color_discrete_map=mapa_colores,
                 title=f"Desglose por Insumo (Total Unit.: ${total_costo_grafico:,.2f})",
             )
             fig_bar.update_traces(
@@ -391,32 +413,26 @@ if vista == "🔎 Análisis por Producto":
             )
             fig_bar.update_layout(
                 showlegend=False,
-                margin=dict(l=10, r=40, t=35, b=10),
+                margin=dict(l=10, r=45, t=35, b=10),
                 height=380,
                 paper_bgcolor="#0B0E14",
                 plot_bgcolor="#0B0E14",
                 xaxis_title="",
                 yaxis_title="",
-                coloraxis_showscale=False,
             )
             st.plotly_chart(
                 fig_bar, use_container_width=True, config=plotly_config
             )
 
-    with col_g2:
-        if not receta_prod.empty and total_costo_grafico > 0:
-            receta_prod_copy = receta_prod.copy()
-            receta_prod_copy["Insumo_Label"] = receta_prod_copy[
-                "Descripción"
-            ].apply(lambda x: truncate_text(x, 18))
-
+        with col_g2:
             fig_pie = px.pie(
-                receta_prod_copy,
+                df_sorted,
                 names="Insumo_Label",
                 values="Costo Insumo ($)",
                 hole=0.48,
                 template="plotly_dark",
-                color_discrete_sequence=px.colors.qualitative.Bold,
+                color="Insumo_Label",
+                color_discrete_map=mapa_colores,
                 title="Distribución % Insumos",
             )
             fig_pie.update_traces(
@@ -444,104 +460,66 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # TABLA DESGLOSE (BOM) EN MODO OSCURO INTEGRADO
+    # TABLA DESGLOSE (BOM) ANCHO COMPLETO SIN FONDO BLANCO
     # ---------------------------------------------------------
-    col_t1, col_t2 = st.columns([3, 2])
+    st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
 
-    with col_t1:
-        st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
-        tabla_out = receta_prod[
-            [
-                "Código Insumo",
-                "Descripción",
-                "Cant. Teorica",
-                "Precio Compra",
-                "Costo Insumo ($)",
-            ]
-        ].copy()
-        tabla_out["% Part."] = (
-            tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100
-            if total_costo_grafico > 0
-            else 0
-        )
-        tabla_out.columns = [
-            "Cód. Insumo",
-            "Insumo",
-            "Cant. Teórica",
-            "Precio Unit. ($)",
-            "Costo ($)",
-            "% Participación",
+    tabla_out = receta_prod[
+        [
+            "Código Insumo",
+            "Descripción",
+            "Cant. Teorica",
+            "Precio Compra",
+            "Costo Insumo ($)",
         ]
+    ].copy()
+    tabla_out["% Part."] = (
+        tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100
+        if total_costo_grafico > 0
+        else 0
+    )
+    tabla_out.columns = [
+        "Cód. Insumo",
+        "Insumo",
+        "Cant. Teórica",
+        "Precio Unit. ($)",
+        "Costo ($)",
+        "% Participación",
+    ]
 
-        tabla_out_formatted = tabla_out.copy()
-        tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
-            "Cant. Teórica"
-        ].apply(lambda x: f"{x:,.4f}")
-        tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted[
-            "Precio Unit. ($)"
-        ].apply(lambda x: f"${x:,.2f}")
-        tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(
-            lambda x: f"${x:,.2f}"
-        )
-        tabla_out_formatted["% Participación"] = tabla_out_formatted[
-            "% Participación"
-        ].apply(lambda x: f"{x:.1f}%")
+    tabla_out_formatted = tabla_out.copy()
+    tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted[
+        "Cant. Teórica"
+    ].apply(lambda x: f"{x:,.4f}")
+    tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted[
+        "Precio Unit. ($)"
+    ].apply(lambda x: f"${x:,.2f}")
+    tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(
+        lambda x: f"${x:,.2f}"
+    )
+    tabla_out_formatted["% Participación"] = tabla_out_formatted[
+        "% Participación"
+    ].apply(lambda x: f"{x:.1f}%")
 
-        fila_total = pd.DataFrame(
-            [
-                {
-                    "Cód. Insumo": "TOTAL",
-                    "Insumo": "SUMATORIA TOTAL RECURSOS",
-                    "Cant. Teórica": "-",
-                    "Precio Unit. ($)": "-",
-                    "Costo ($)": f"${total_costo_grafico:,.2f}",
-                    "% Participación": "100.0%",
-                }
-            ]
-        )
+    fila_total = pd.DataFrame(
+        [
+            {
+                "Cód. Insumo": "TOTAL",
+                "Insumo": "SUMATORIA TOTAL RECURSOS",
+                "Cant. Teórica": "-",
+                "Precio Unit. ($)": "-",
+                "Costo ($)": f"${total_costo_grafico:,.2f}",
+                "% Participación": "100.0%",
+            }
+        ]
+    )
 
-        tabla_final = pd.concat(
-            [tabla_out_formatted, fila_total], ignore_index=True
-        )
-        st.dataframe(tabla_final, use_container_width=True, height=340)
+    tabla_final = pd.concat(
+        [tabla_out_formatted, fila_total], ignore_index=True
+    )
 
-    with col_t2:
-        st.markdown("### 📊 Contribución Acumulada")
-        if not receta_prod.empty:
-            df_flujo = receta_prod.sort_values(
-                "Costo Insumo ($)", ascending=True
-            ).copy()
-            df_flujo["Insumo_Corto"] = df_flujo["Descripción"].apply(
-                lambda x: truncate_text(x, 22)
-            )
-
-            fig_flujo = px.bar(
-                df_flujo,
-                x="Costo Insumo ($)",
-                y="Insumo_Corto",
-                orientation="h",
-                text="Costo Insumo ($)",
-                template="plotly_dark",
-                color="Costo Insumo ($)",
-                color_continuous_scale="Greens",
-                title=f"Importe Total Generado: ${total_costo_grafico:,.2f}",
-            )
-            fig_flujo.update_traces(
-                texttemplate="$%{x:,.2f}", textposition="outside"
-            )
-            fig_flujo.update_layout(
-                showlegend=False,
-                margin=dict(l=10, r=40, t=30, b=10),
-                height=340,
-                paper_bgcolor="#0B0E14",
-                plot_bgcolor="#0B0E14",
-                xaxis_title="",
-                yaxis_title="",
-                coloraxis_showscale=False,
-            )
-            st.plotly_chart(
-                fig_flujo, use_container_width=True, config=plotly_config
-            )
+    # Renderizado en ancho completo
+    st.dataframe(tabla_final, use_container_width=True, height=360)
 
 else:
     # ---------------------------------------------------------
