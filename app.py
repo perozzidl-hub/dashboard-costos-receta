@@ -119,6 +119,7 @@ st.markdown(
         }
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
+        .kpi-danger { color: #F43F5E !important; }
 
         /* ESTILO LEGIBLE Y VISIBLE PARA TABLAS ST.TABLE */
         .stTable {
@@ -258,7 +259,11 @@ PALETA_COLORES = [
 st.sidebar.title("⚡ Control Center")
 vista = st.sidebar.radio(
     "Seleccionar Vista:",
-    ["🔎 Análisis por Producto", "🌐 Visión General de Compañía"],
+    [
+        "🔎 Análisis por Producto",
+        "🌐 Visión General de Compañía",
+        "📊 Contribuciones y Desperdicio",
+    ],
 )
 
 st.sidebar.divider()
@@ -293,7 +298,7 @@ if tipo_seleccionado != "Todos los Tipos":
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-   # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # SECCIÓN: SELECCIÓN DE PRODUCTO Y FILTRADO DINÁMICO
     # ---------------------------------------------------------
     st.sidebar.header("📦 Seleccionar Producto")
@@ -324,9 +329,7 @@ if vista == "🔎 Análisis por Producto":
             df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
             tipo_prod = ventas_prod["Tipo_Producto"].iloc[0] if ("Tipo_Producto" in ventas_prod.columns and not ventas_prod.empty) else "P"
 
-        # ---------------------------------------------------------
         # CÁLCULOS METRICAS DE KPIS
-        # ---------------------------------------------------------
         col_fact = "Facturación Neta" if "Facturación Neta" in ventas_prod.columns else ("Total" if "Total" in ventas_prod.columns else "Monto")
         col_vol = "Físicos" if "Físicos" in ventas_prod.columns else ("Cantidad" if "Cantidad" in ventas_prod.columns else None)
 
@@ -343,6 +346,7 @@ if vista == "🔎 Análisis por Producto":
     else:
         st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
+
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
@@ -425,32 +429,22 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # NUEVA SECCIÓN: EVOLUCIÓN TEMPORAL COMPARATIVA (GRÁFICOS DE LÍNEAS)
-    # ---------------------------------------------------------
-   # ---------------------------------------------------------
-    # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
-    # ---------------------------------------------------------
-   # ---------------------------------------------------------
     # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
     # ---------------------------------------------------------
     st.markdown("### 📈 Variación Porcentual Acumulada del Producto (% Var)")
 
-    # Filtro base para historia completa del producto seleccionado
-    df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
+    df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy() if cod_art != "TODOS" else df_ventas.copy()
     if locacion_seleccionada != "Todas las Locaciones":
         df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
 
-    # Asegurar que la columna FECHA sea datetime para la agrupación por mes
     if "FECHA" in df_hist.columns:
         df_hist["FECHA"] = pd.to_datetime(df_hist["FECHA"], errors="coerce")
-        # Generar clave de ordenamiento por año-mes y etiqueta legible (ej: may26, jun26)
         df_hist["Periodo_Orden"] = df_hist["FECHA"].dt.to_period("M")
         df_hist["Mes_Label"] = df_hist["FECHA"].dt.strftime("%b%y").str.lower()
     else:
         df_hist["Periodo_Orden"] = df_hist["Mes_Venta"]
         df_hist["Mes_Label"] = df_hist["Mes_Venta"]
 
-    # Agrupación mensual usando la clave temporal para mantener el orden cronológico
     df_trend = (
         df_hist.groupby(["Periodo_Orden", "Mes_Label"])
         .agg(
@@ -462,11 +456,9 @@ if vista == "🔎 Análisis por Producto":
         .sort_values("Periodo_Orden")
     )
 
-    # Filtrar registros nulos/vacíos
     df_trend = df_trend.dropna(subset=["Periodo_Orden"])
 
     if not df_trend.empty and df_trend["Volumen"].sum() > 0:
-        # 1. Cálculo de métricas unitarias absolutas
         df_trend["Facturacion_Unitaria"] = df_trend.apply(
             lambda r: (r["Facturacion_Neta"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
         )
@@ -475,12 +467,10 @@ if vista == "🔎 Análisis por Producto":
         )
         df_trend["CM_Unitaria"] = df_trend["Facturacion_Unitaria"] - df_trend["Costo_Unitario"]
 
-        # 2. Tomar valores base del primer período (Base 0%)
         base_fact = df_trend["Facturacion_Unitaria"].iloc[0]
         base_costo = df_trend["Costo_Unitario"].iloc[0]
         base_cm = df_trend["CM_Unitaria"].iloc[0]
 
-        # 3. Calcular % de Variación Acumulada respecto al periodo inicial
         df_trend["% Var Facturación Unit."] = (
             ((df_trend["Facturacion_Unitaria"] - base_fact) / base_fact * 100) if base_fact > 0 else 0.0
         )
@@ -491,7 +481,6 @@ if vista == "🔎 Análisis por Producto":
             ((df_trend["CM_Unitaria"] - base_cm) / base_cm * 100) if base_cm > 0 else 0.0
         )
 
-        # 4. Formatear DataFrame a formato largo (Melt) para Plotly
         df_plot = df_trend.melt(
             id_vars=["Mes_Label"],
             value_vars=["% Var Facturación Unit.", "% Var Costo Unit.", "% Var Contribución Marg."],
@@ -499,7 +488,6 @@ if vista == "🔎 Análisis por Producto":
             value_name="Variación_Pct",
         )
 
-        # 5. Construcción del gráfico de líneas unificado
         fig_evolucion = px.line(
             df_plot,
             x="Mes_Label",
@@ -509,16 +497,13 @@ if vista == "🔎 Análisis por Producto":
             title="Comparativo de Tendencias: % de Incremento vs. Período Base",
             template="plotly_dark",
             color_discrete_map={
-                "% Var Facturación Unit.": "#4ADE80",  # Verde
-                "% Var Costo Unit.": "#FBBF24",        # Amarillo/Naranja
-                "% Var Contribución Marg.": "#38BDF8", # Azul
+                "% Var Facturación Unit.": "#4ADE80",
+                "% Var Costo Unit.": "#FBBF24",
+                "% Var Contribución Marg.": "#38BDF8",
             },
         )
 
-        # Configuración explícita del eje X como categoría (evita la interpolación por días de Plotly)
         fig_evolucion.update_xaxes(type="category")
-
-        # Customización visual del Tooltip y Ejes
         fig_evolucion.update_traces(
             line=dict(width=3),
             marker=dict(size=8),
@@ -655,7 +640,7 @@ if vista == "🔎 Análisis por Producto":
     else:
         st.info("ℹ️ **Producto de Reventa (R)**: El costo total proviene directamente de la columna **TOTAL PRODUCTO TERCEROS** en el registro de ventas.")
 
-else:
+elif vista == "🌐 Visión General de Compañía":
     # ---------------------------------------------------------
     # VISTA GENERAL DE COMPAÑÍA
     # ---------------------------------------------------------
@@ -754,3 +739,158 @@ else:
             yaxis_title="",
         )
         st.plotly_chart(fig_top, config=plotly_config)
+
+elif vista == "📊 Contribuciones y Desperdicio":
+    # ---------------------------------------------------------
+    # VISTA: CONTRIBUCIONES, COSTOS TEÓRICOS Y DESPERDICIO
+    # ---------------------------------------------------------
+    st.title("📊 Análisis de Contribuciones, Estándar y Desperdicio")
+
+    st.markdown(
+        f"""
+        <div class="month-banner">
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Categoría: <strong>{tipo_seleccionado}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col_nom = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
+
+    # 1. Agrupar costos teóricos de la Receta por producto
+    if not receta_precios.empty:
+        receta_summary = (
+            receta_precios.groupby("Cod. Venta")["Costo Insumo ($)"]
+            .sum()
+            .reset_index()
+            .rename(columns={"Costo Insumo ($)": "Costo_Teorico_Unitario"})
+        )
+    else:
+        receta_summary = pd.DataFrame(columns=["Cod. Venta", "Costo_Teorico_Unitario"])
+
+    # 2. Agrupar Ventas por producto
+    ventas_contrib = (
+        df_ventas_filt.groupby(["Cod. Venta", col_nom, "Tipo_Producto"])
+        .agg(
+            Volumen_Vendida=("Físicos", "sum"),
+            Facturacion_Neta=("Facturación Neta", "sum"),
+            Costo_Total_Real=("COSTO_TOTAL_REAL", "sum"),
+        )
+        .reset_index()
+    )
+
+    # 3. Cruzar ventas con receta teórica
+    df_contrib = pd.merge(ventas_contrib, receta_summary, on="Cod. Venta", how="left")
+    df_contrib["Costo_Teorico_Unitario"] = df_contrib["Costo_Teorico_Unitario"].fillna(0.0)
+
+    # 4. Cálculo de unitarios y desvíos/desperdicio
+    df_contrib["Facturacion_Unit"] = df_contrib.apply(
+        lambda r: (r["Facturacion_Neta"] / r["Volumen_Vendida"]) if r["Volumen_Vendida"] > 0 else 0.0, axis=1
+    )
+    df_contrib["Costo_Real_Unit"] = df_contrib.apply(
+        lambda r: (r["Costo_Total_Real"] / r["Volumen_Vendida"]) if r["Volumen_Vendida"] > 0 else 0.0, axis=1
+    )
+
+    # Para Reventa (R), el costo teórico es igual al de la compra
+    df_contrib["Costo_Teorico_Unit"] = df_contrib.apply(
+        lambda r: r["Costo_Real_Unit"] if r["Tipo_Producto"] == "R" else r["Costo_Teorico_Unitario"], axis=1
+    )
+
+    # Desperdicio = Costo Real registrado - Costo Teórico BOM (o Desvío de Margen)
+    df_contrib["Desperdicio_Unit"] = df_contrib["Costo_Real_Unit"] - df_contrib["Costo_Teorico_Unit"]
+    df_contrib["Desperdicio_Total"] = df_contrib["Desperdicio_Unit"] * df_contrib["Volumen_Vendida"]
+
+    # Contribución Estándar (Teórica) vs. Real
+    df_contrib["CM_Estandar_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Teorico_Unit"]
+    df_contrib["CM_Real_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Real_Unit"]
+
+    df_contrib["% CM Estandar"] = df_contrib.apply(
+        lambda r: (r["CM_Estandar_Unit"] / r["Facturacion_Unit"] * 100) if r["Facturacion_Unit"] > 0 else 0.0, axis=1
+    )
+    df_contrib["% CM Real"] = df_contrib.apply(
+        lambda r: (r["CM_Real_Unit"] / r["Facturacion_Unit"] * 100) if r["Facturacion_Unit"] > 0 else 0.0, axis=1
+    )
+
+    # KPIS METRICAS DE DESPERDICIO Y CONTRIBUCIONES GLOBAL
+    tot_vol = df_contrib["Volumen_Vendida"].sum()
+    tot_fact = df_contrib["Facturacion_Neta"].sum()
+    tot_costo_real = df_contrib["Costo_Total_Real"].sum()
+    tot_desperdicio = df_contrib["Desperdicio_Total"].sum()
+    tot_cm_real = tot_fact - tot_costo_real
+    pct_desperdicio_sob_fact = (tot_desperdicio / tot_fact * 100) if tot_fact > 0 else 0.0
+
+    dk1, dk2, dk3, dk4 = st.columns(4)
+    with dk1:
+        draw_kpi("Facturación Neta", f"${tot_fact:,.2f}")
+    with dk2:
+        draw_kpi("Costo Real Total", f"${tot_costo_real:,.2f}", color_class="kpi-warning")
+    with dk3:
+        draw_kpi("Desperdicio / Desvío Total", f"${tot_desperdicio:,.2f}", sub=f"{pct_desperdicio_sob_fact:.1f}% de Venta", color_class="kpi-danger")
+    with dk4:
+        draw_kpi("Contribución Marg. Real", f"${tot_cm_real:,.2f}", sub=f"{(tot_cm_real/tot_fact*100) if tot_fact>0 else 0:.1f}% Margen", color_class="kpi-neutral")
+
+    st.divider()
+
+    st.markdown("### 📋 Tabla Comparativa de Composiciones & Desperdicio por Producto")
+
+    # Selección visual de columnas para el usuario
+    col_export = df_contrib[[
+        "Cod. Venta", col_nom, "Tipo_Producto", "Volumen_Vendida",
+        "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
+        "Costo_Real_Unit", "CM_Estandar_Unit", "% CM Estandar",
+        "CM_Real_Unit", "% CM Real", "Desperdicio_Total"
+    ]].copy()
+
+    col_export.columns = [
+        "Cód. SAP", "Producto", "Tipo", "Volumen (u.)",
+        "Facturación Unit. ($)", "Costo Receta ($)", "Desperdicio Unit. ($)",
+        "Costo Real Unit. ($)", "CM Estándar ($)", "% CM Est.",
+        "CM Real ($)", "% CM Real", "Desperdicio Total ($)"
+    ]
+
+    # Formateador visual con colores
+    def highlight_desperdicio(val):
+        if isinstance(val, (int, float)):
+            if val > 0:
+                return 'color: #F43F5E; font-weight: bold;'
+            elif val < 0:
+                return 'color: #4ADE80; font-weight: bold;'
+        return ''
+
+    def highlight_cm(val):
+        if isinstance(val, (int, float)):
+            if val >= 30:
+                return 'color: #4ADE80; font-weight: bold;'
+            elif val < 15:
+                return 'color: #FBBF24; font-weight: bold;'
+            else:
+                return 'color: #38BDF8; font-weight: bold;'
+        return ''
+
+    styled_df = (
+        col_export.style
+        .format({
+            "Volumen (u.)": "{:,.0f}",
+            "Facturación Unit. ($)": "${:,.2f}",
+            "Costo Receta ($)": "${:,.2f}",
+            "Desperdicio Unit. ($)": "${:,.2f}",
+            "Costo Real Unit. ($)": "${:,.2f}",
+            "CM Estándar ($)": "${:,.2f}",
+            "% CM Est.": "{:.1f}%",
+            "CM Real ($)": "${:,.2f}",
+            "% CM Real": "{:.1f}%",
+            "Desperdicio Total ($)": "${:,.2f}",
+        })
+        .applymap(highlight_desperdicio, subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"])
+        .applymap(highlight_cm, subset=["% CM Est.", "% CM Real"])
+    )
+
+    st.dataframe(styled_df, use_container_width=True, height=520)
+
+    # Botón para descargar reporte en Excel
+    st.download_button(
+        label="📥 Descargar Reporte de Contribuciones en Excel",
+        data=col_export.to_csv(index=False).encode('utf-8'),
+        file_name=f"Reporte_Contribuciones_{mes_seleccionado}.csv",
+        mime="text/csv",
+    )
