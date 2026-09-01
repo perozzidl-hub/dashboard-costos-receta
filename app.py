@@ -293,29 +293,42 @@ if tipo_seleccionado != "Todos los Tipos":
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-    st.sidebar.header("📦 Seleccionar Producto")
+   st.sidebar.header("📦 Seleccionar Producto")
 
     col_nombre_art = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
     articulos_df = df_ventas_filt[["Cod. Venta", col_nombre_art]].drop_duplicates().sort_values(col_nombre_art)
 
     if not articulos_df.empty:
-        opciones_dict = {
+        # 1. Incluir la opción global "Todos los Artículos"
+        opciones_dict = {"Todos los Artículos": "TODOS"}
+        opciones_dict.update({
             f"{int(row['Cod. Venta'])} - {row[col_nombre_art]}": int(row["Cod. Venta"])
             for _, row in articulos_df.iterrows()
-        }
+        })
 
         item_seleccionado = st.sidebar.selectbox("Seleccionar Artículo:", list(opciones_dict.keys()))
         cod_art = opciones_dict[item_seleccionado]
-        nombre_art = item_seleccionado.split(" - ", 1)[1]
+        
+        if cod_art == "TODOS":
+            nombre_art = "Consolidado - Todos los Artículos"
+            tipo_prod = "P / R"
+        else:
+            nombre_art = item_seleccionado.split(" - ", 1)[1]
+            ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
+            tipo_prod = ventas_prod_gen["Tipo_Producto"].iloc[0] if not ventas_prod_gen.empty else "P"
     else:
         st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
 
-    ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
-    tipo_prod = ventas_prod_gen["Tipo_Producto"].iloc[0] if not ventas_prod_gen.empty else "P"
+    # 2. Filtrado dinámico según selección (Individual o Todos)
+    if cod_art == "TODOS":
+        ventas_prod = df_ventas_filt.copy()
+        df_hist = df_ventas.copy()
+    else:
+        ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
+        df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
 
-    ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
-
+    # 3. Cálculo de Indicadores Ponderados
     volumen_unid = ventas_prod["Físicos"].sum() if "Físicos" in ventas_prod.columns else 0.0
     fact_lista = ventas_prod["Facturación Lista"].sum() if "Facturación Lista" in ventas_prod.columns else 0.0
     fact_neta = ventas_prod["Facturación Neta"].sum() if "Facturación Neta" in ventas_prod.columns else 0.0
@@ -325,7 +338,6 @@ if vista == "🔎 Análisis por Producto":
     pct_margen = (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
     precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
     costo_unitario_real = (costo_total_calculado / volumen_unid) if volumen_unid > 0 else 0.0
-
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
