@@ -867,9 +867,9 @@ elif vista == "📊 Contribuciones y Desperdicio":
                 return 'color: #38BDF8; font-weight: bold;'
         return ''
 
-    styled_df = (
-        col_export.style.map
-        .format({
+ styled_df = (
+    col_export.style.format(
+        {
             "Volumen (u.)": "{:,.0f}",
             "Facturación Unit. ($)": "${:,.2f}",
             "Costo Receta ($)": "${:,.2f}",
@@ -880,10 +880,14 @@ elif vista == "📊 Contribuciones y Desperdicio":
             "CM Real ($)": "${:,.2f}",
             "% CM Real": "{:.1f}%",
             "Desperdicio Total ($)": "${:,.2f}",
-        })
-        df.style.map(highlight_desperdicio, subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"])
-        df.style.map(highlight_cm, subset=["% CM Est.", "% CM Real"])
+        }
     )
+    .map(
+        highlight_desperdicio,
+        subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"],
+    )
+    .map(highlight_cm, subset=["% CM Est.", "% CM Real"])
+)
 
     st.dataframe(styled_df, use_container_width=True, height=520)
 
