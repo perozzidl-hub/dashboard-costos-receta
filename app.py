@@ -868,7 +868,7 @@ elif vista == "📊 Contribuciones y Desperdicio":
         return ''
 
     styled_df = (
-        col_export.style
+        col_export.style.map
         .format({
             "Volumen (u.)": "{:,.0f}",
             "Facturación Unit. ($)": "${:,.2f}",
