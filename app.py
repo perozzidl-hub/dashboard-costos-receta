@@ -293,7 +293,7 @@ if tipo_seleccionado != "Todos los Tipos":
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-  # ---------------------------------------------------------
+    # ---------------------------------------------------------
     # SECCIÓN: SELECCIÓN DE PRODUCTO Y FILTRADO DINÁMICO
     # ---------------------------------------------------------
     st.sidebar.header("📦 Seleccionar Producto")
@@ -302,34 +302,40 @@ if vista == "🔎 Análisis por Producto":
     articulos_df = df_ventas_filt[["Cod. Venta", col_nombre_art]].drop_duplicates().sort_values(col_nombre_art)
 
     if not articulos_df.empty:
-        # Configurar diccionario con opción global
+        # Configurar opciones incluyendo "Todos los Artículos"
         opciones_dict = {"Todos los Artículos": "TODOS"}
-        opciones_dict.update({
-            f"{int(row['Cod. Venta'])} - {row[col_nombre_art]}": int(row["Cod. Venta"])
-            for _, row in articulos_df.iterrows()
-        })
+        for _, row in articulos_df.iterrows():
+            try:
+                cod_val = int(row["Cod. Venta"])
+            except (ValueError, TypeError):
+                cod_val = row["Cod. Venta"]
+            opciones_dict[f"{cod_val} - {row[col_nombre_art]}"] = cod_val
 
         item_seleccionado = st.sidebar.selectbox("Seleccionar Artículo:", list(opciones_dict.keys()))
         cod_art = opciones_dict[item_seleccionado]
-        
+
+        # Filtrado del DataFrame según la selección
         if cod_art == "TODOS":
             nombre_art = "Consolidado - Todos los Artículos"
             tipo_prod = "P / R"
+            ventas_prod = df_ventas_filt.copy()
+            df_hist_base = df_ventas.copy()
         else:
-            nombre_art = item_seleccionado.split(" - ", 1)[1]
-            ventas_prod_gen = df_ventas[df_ventas["Cod. Venta"] == cod_art]
-            tipo_prod = ventas_prod_gen["Tipo_Producto"].iloc[0] if not ventas_prod_gen.empty else "P"
+            nombre_art = item_seleccionado.split(" - ", 1)[1] if " - " in item_seleccionado else item_seleccionado
+            ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art].copy()
+            df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
+            tipo_prod = ventas_prod["Tipo_Producto"].iloc[0] if ("Tipo_Producto" in ventas_prod.columns and not ventas_prod.empty) else "P"
+
+        # CÁLCULO DE FACTURACIÓN NETA (Para evitar el NameError en draw_kpi)
+        col_fact = "Total" if "Total" in ventas_prod.columns else ("Monto" if "Monto" in ventas_prod.columns else None)
+        if col_fact and not ventas_prod.empty:
+            fact_neta = float(ventas_prod[col_fact].sum())
+        else:
+            fact_neta = 0.0
+
     else:
         st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
-
-    # Filtrado del DataFrame según la selección (Individual o Global)
-    if cod_art == "TODOS":
-        ventas_prod = df_ventas_filt.copy()
-        df_hist_base = df_ventas.copy()
-    else:
-        ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
-        df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
