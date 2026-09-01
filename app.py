@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 # ---------------------------------------------------------
@@ -14,7 +15,7 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------
-# ESTILOS CSS AVANZADOS (TABLAS CLARAS Y ALTO CONTRASTE)
+# ESTILOS CSS AVANZADOS
 # ---------------------------------------------------------
 st.markdown(
     """
@@ -44,7 +45,6 @@ st.markdown(
             color: #38BDF8;
         }
 
-        /* BADGES DE TIPO PROD */
         .type-badge {
             background-color: #38BDF8;
             color: #0F172A;
@@ -55,7 +55,6 @@ st.markdown(
             margin-left: 10px;
         }
 
-        /* SIDEBAR ALTO CONTRASTE */
         section[data-testid="stSidebar"] {
             background-color: #0F172A !important;
             border-right: 1px solid #1E293B;
@@ -78,12 +77,6 @@ st.markdown(
             border-radius: 8px;
         }
 
-        section[data-testid="stSidebar"] div[role="radiogroup"] label span {
-            color: #F1F5F9 !important;
-            font-size: 0.95rem !important;
-        }
-
-        /* TARJETAS DE KPIS */
         .kpi-card {
             background: linear-gradient(135deg, #1E293B 0%, #111827 100%);
             border: 1px solid #334155;
@@ -120,7 +113,6 @@ st.markdown(
         .kpi-neutral { color: #38BDF8 !important; }
         .kpi-warning { color: #FBBF24 !important; }
 
-        /* ESTILO LEGIBLE Y VISIBLE PARA TABLAS ST.TABLE */
         .stTable {
             background-color: #1E293B !important;
             border-radius: 8px;
@@ -150,7 +142,7 @@ st.markdown(
 # ---------------------------------------------------------
 # CARGA Y PREPROCESAMIENTO DE DATOS
 # ---------------------------------------------------------
-@st.cache_data
+@st.cache_data(ttl=60)
 def load_data():
     df_ventas = pd.read_excel("VENTAS.xlsx", header=7)
     df_receta = pd.read_excel("RECETA.xlsx")
@@ -164,7 +156,6 @@ def load_data():
     else:
         df_ventas["Mes_Venta"] = "Sin Fecha"
 
-    # Detección y normalización del tipo de producto (Propio / Reventa)
     col_tipo = None
     for col in df_ventas.columns:
         if any(
@@ -193,7 +184,6 @@ def load_data():
 
     df_ventas = df_ventas.dropna(subset=["Cod. Venta"])
 
-    # Conversiones numéricas de costos en VENTAS
     if "TOTAL INSUMOS" in df_ventas.columns:
         df_ventas["TOTAL INSUMOS"] = pd.to_numeric(
             df_ventas["TOTAL INSUMOS"], errors="coerce"
@@ -208,8 +198,6 @@ def load_data():
     else:
         df_ventas["TOTAL PRODUCTO TERCEROS"] = 0.0
 
-    # LÓGICA DE COSTO UNIFICADO EN VENTAS:
-    # Si Tipo_Producto es 'R', usará TOTAL PRODUCTO TERCEROS. Si es 'P', usará TOTAL INSUMOS.
     df_ventas["COSTO_TOTAL_REAL"] = df_ventas.apply(
         lambda r: r["TOTAL PRODUCTO TERCEROS"]
         if r["Tipo_Producto"] == "R"
@@ -282,14 +270,12 @@ vista = st.sidebar.radio(
 st.sidebar.divider()
 st.sidebar.header("🗓️ Filtros Globales")
 
-# 1. Filtro Mes
 meses_disponibles = sorted(
     list(set(df_ventas["Mes_Venta"].dropna().unique()))
 )
 opciones_mes = ["Todos los Meses"] + [m for m in meses_disponibles if m != ""]
 mes_seleccionado = st.sidebar.selectbox("Mes de Venta:", opciones_mes)
 
-# 2. Filtro Locación
 locaciones_disponibles = sorted(
     [
         str(loc)
@@ -302,7 +288,6 @@ locacion_seleccionada = st.sidebar.selectbox(
     "Locación - SAP:", opciones_locacion
 )
 
-# 3. FILTRO: Tipo de Producto (Propio / Reventa)
 tipos_disponibles = sorted(
     [
         str(t)
@@ -315,7 +300,6 @@ tipo_seleccionado = st.sidebar.selectbox(
     "Tipo de Producto (Origen):", opciones_tipo
 )
 
-# Aplicar Filtros Globales a Dataset de Ventas
 df_ventas_filt = df_ventas.copy()
 if mes_seleccionado != "Todos los Meses":
     df_ventas_filt = df_ventas_filt[
@@ -373,20 +357,13 @@ if vista == "🔎 Análisis por Producto":
     volumen_unid = (
         ventas_prod["Físicos"].sum() if "Físicos" in ventas_prod.columns else 0
     )
-    fact_lista = (
-        ventas_prod["Facturación Lista"].sum()
-        if "Facturación Lista" in ventas_prod.columns
-        else 0
-    )
     fact_neta = (
         ventas_prod["Facturación Neta"].sum()
         if "Facturación Neta" in ventas_prod.columns
         else 0
     )
 
-    # Selección automática del costo según tipo de producto
     costo_total_calculado = ventas_prod["COSTO_TOTAL_REAL"].sum()
-    
     contribucion_marg = fact_neta - costo_total_calculado
     pct_margen = (
         (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
@@ -462,9 +439,106 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
-    # COMPARATIVO UNITARIO (BARRAS DESCENDENTES)
+    # NUEVA SECCIÓN: EVOLUCIÓN HISTÓRICA DEL PRODUCTO
     # ---------------------------------------------------------
-    st.markdown("### ⚖️ Relación Facturación Unitaria vs. Costo Unitario")
+    st.markdown("### 📈 Evolución Histórica: Facturación, Costos, Margen y Ventas")
+
+    # Agrupamos por mes para la serie temporal histórica del producto seleccionado
+    hist_prod = (
+        ventas_prod_gen.groupby("Mes_Venta")
+        .agg(
+            {
+                "Facturación Neta": "sum",
+                "COSTO_TOTAL_REAL": "sum",
+                "Físicos": "sum",
+            }
+        )
+        .reset_index()
+        .sort_values("Mes_Venta")
+    )
+
+    if not hist_prod.empty and len(hist_prod) > 1:
+        hist_prod["Contribucion"] = (
+            hist_prod["Facturación Neta"] - hist_prod["COSTO_TOTAL_REAL"]
+        )
+        hist_prod["Fact_Unitaria"] = hist_prod.apply(
+            lambda r: r["Facturación Neta"] / r["Físicos"] if r["Físicos"] > 0 else 0,
+            axis=1,
+        )
+        hist_prod["Costo_Unitario"] = hist_prod.apply(
+            lambda r: r["COSTO_TOTAL_REAL"] / r["Físicos"] if r["Físicos"] > 0 else 0,
+            axis=1,
+        )
+
+        fig_evol = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Métricas Unitarias
+        fig_evol.add_trace(
+            go.Scatter(
+                x=hist_prod["Mes_Venta"],
+                y=hist_prod["Fact_Unitaria"],
+                name="Facturación Unit. ($)",
+                line=dict(color="#4ADE80", width=3),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+        fig_evol.add_trace(
+            go.Scatter(
+                x=hist_prod["Mes_Venta"],
+                y=hist_prod["Costo_Unitario"],
+                name="Costo Unitario ($)",
+                line=dict(color="#FBBF24", width=3, dash="dash"),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+        fig_evol.add_trace(
+            go.Scatter(
+                x=hist_prod["Mes_Venta"],
+                y=hist_prod["Contribucion"],
+                name="Contribución Margen ($)",
+                line=dict(color="#38BDF8", width=2),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+
+        # Volumen de Ventas en el Eje Secundario
+        fig_evol.add_trace(
+            go.Bar(
+                x=hist_prod["Mes_Venta"],
+                y=hist_prod["Físicos"],
+                name="Ventas Físicas (u.)",
+                marker_color="rgba(168, 85, 247, 0.3)",
+            ),
+            secondary_y=True,
+        )
+
+        fig_evol.update_layout(
+            template="plotly_dark",
+            height=400,
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+            hovermode="x unified",
+        )
+        fig_evol.update_yaxes(title_text="Valores Financieros ($)", secondary_y=False, gridcolor="#1E293B")
+        fig_evol.update_yaxes(title_text="Unidades Vendidas (u.)", secondary_y=True, showgrid=False)
+
+        st.plotly_chart(fig_evol, use_container_width=True, config=plotly_config)
+    else:
+        st.info("ℹ️ Se requiere información de al menos 2 meses para graficar la evolución histórica temporal de este producto.")
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # COMPARATIVO UNITARIO (BARRAS)
+    # ---------------------------------------------------------
+    st.markdown("### ⚖️ Relación Facturación Unitaria vs. Costo Unitario (Período Seleccionado)")
 
     pct_costo_sobre_venta = (
         (costo_unitario_real / precio_prom_unit * 100)
@@ -707,6 +781,102 @@ else:
             f"{pct_margen_global:.1f}%",
             sub="Margen Global",
         )
+
+    st.divider()
+
+    # ---------------------------------------------------------
+    # NUEVA SECCIÓN: EVOLUCIÓN HISTÓRICA DE LA COMPAÑÍA
+    # ---------------------------------------------------------
+    st.markdown("### 📈 Evolución Histórica de la Compañía")
+
+    hist_global = (
+        df_ventas.groupby("Mes_Venta")
+        .agg(
+            {
+                "Facturación Neta": "sum",
+                "COSTO_TOTAL_REAL": "sum",
+                "Físicos": "sum",
+            }
+        )
+        .reset_index()
+        .sort_values("Mes_Venta")
+    )
+
+    if not hist_global.empty and len(hist_global) > 1:
+        hist_global["Contribucion"] = (
+            hist_global["Facturación Neta"] - hist_global["COSTO_TOTAL_REAL"]
+        )
+        hist_global["Fact_Unitaria_Prom"] = hist_global.apply(
+            lambda r: r["Facturación Neta"] / r["Físicos"] if r["Físicos"] > 0 else 0,
+            axis=1,
+        )
+        hist_global["Costo_Unitario_Prom"] = hist_global.apply(
+            lambda r: r["COSTO_TOTAL_REAL"] / r["Físicos"] if r["Físicos"] > 0 else 0,
+            axis=1,
+        )
+
+        fig_evol_glob = make_subplots(specs=[[{"secondary_y": True}]])
+
+        # Totales Consolidados
+        fig_evol_glob.add_trace(
+            go.Scatter(
+                x=hist_global["Mes_Venta"],
+                y=hist_global["Facturación Neta"],
+                name="Facturación Neta ($)",
+                line=dict(color="#4ADE80", width=3),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+        fig_evol_glob.add_trace(
+            go.Scatter(
+                x=hist_global["Mes_Venta"],
+                y=hist_global["COSTO_TOTAL_REAL"],
+                name="Costo Total ($)",
+                line=dict(color="#FBBF24", width=3, dash="dash"),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+        fig_evol_glob.add_trace(
+            go.Scatter(
+                x=hist_global["Mes_Venta"],
+                y=hist_global["Contribucion"],
+                name="Contribución ($)",
+                line=dict(color="#38BDF8", width=2),
+                mode="lines+markers",
+            ),
+            secondary_y=False,
+        )
+
+        # Unidades vendidas en el eje secundario
+        fig_evol_glob.add_trace(
+            go.Bar(
+                x=hist_global["Mes_Venta"],
+                y=hist_global["Físicos"],
+                name="Volumen (u.)",
+                marker_color="rgba(168, 85, 247, 0.25)",
+            ),
+            secondary_y=True,
+        )
+
+        fig_evol_glob.update_layout(
+            template="plotly_dark",
+            height=400,
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+            hovermode="x unified",
+        )
+        fig_evol_glob.update_yaxes(title_text="Monto Total ($)", secondary_y=False, gridcolor="#1E293B")
+        fig_evol_glob.update_yaxes(title_text="Unidades Totales (u.)", secondary_y=True, showgrid=False)
+
+        st.plotly_chart(fig_evol_glob, use_container_width=True, config=plotly_config)
+    else:
+        st.info("ℹ️ Se requiere información de al menos 2 meses para mostrar la evolución global.")
 
     st.divider()
 
