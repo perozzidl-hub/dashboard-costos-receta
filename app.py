@@ -881,8 +881,8 @@ elif vista == "📊 Contribuciones y Desperdicio":
             "% CM Real": "{:.1f}%",
             "Desperdicio Total ($)": "${:,.2f}",
         })
-        .applymap(highlight_desperdicio, subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"])
-        .applymap(highlight_cm, subset=["% CM Est.", "% CM Real"])
+        df.style.map(highlight_desperdicio, subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"])
+        df.style.map(highlight_cm, subset=["% CM Est.", "% CM Real"])
     )
 
     st.dataframe(styled_df, use_container_width=True, height=520)
