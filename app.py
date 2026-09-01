@@ -293,13 +293,16 @@ if tipo_seleccionado != "Todos los Tipos":
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-   st.sidebar.header("📦 Seleccionar Producto")
+  # ---------------------------------------------------------
+    # SECCIÓN: SELECCIÓN DE PRODUCTO Y FILTRADO DINÁMICO
+    # ---------------------------------------------------------
+    st.sidebar.header("📦 Seleccionar Producto")
 
     col_nombre_art = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
     articulos_df = df_ventas_filt[["Cod. Venta", col_nombre_art]].drop_duplicates().sort_values(col_nombre_art)
 
     if not articulos_df.empty:
-        # 1. Incluir la opción global "Todos los Artículos"
+        # Configurar diccionario con opción global
         opciones_dict = {"Todos los Artículos": "TODOS"}
         opciones_dict.update({
             f"{int(row['Cod. Venta'])} - {row[col_nombre_art]}": int(row["Cod. Venta"])
@@ -320,24 +323,13 @@ if vista == "🔎 Análisis por Producto":
         st.warning("No hay productos disponibles para los filtros seleccionados.")
         st.stop()
 
-    # 2. Filtrado dinámico según selección (Individual o Todos)
+    # Filtrado del DataFrame según la selección (Individual o Global)
     if cod_art == "TODOS":
         ventas_prod = df_ventas_filt.copy()
-        df_hist = df_ventas.copy()
+        df_hist_base = df_ventas.copy()
     else:
         ventas_prod = df_ventas_filt[df_ventas_filt["Cod. Venta"] == cod_art]
-        df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
-
-    # 3. Cálculo de Indicadores Ponderados
-    volumen_unid = ventas_prod["Físicos"].sum() if "Físicos" in ventas_prod.columns else 0.0
-    fact_lista = ventas_prod["Facturación Lista"].sum() if "Facturación Lista" in ventas_prod.columns else 0.0
-    fact_neta = ventas_prod["Facturación Neta"].sum() if "Facturación Neta" in ventas_prod.columns else 0.0
-
-    costo_total_calculado = ventas_prod["COSTO_TOTAL_REAL"].sum()
-    contribucion_marg = fact_neta - costo_total_calculado
-    pct_margen = (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
-    precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
-    costo_unitario_real = (costo_total_calculado / volumen_unid) if volumen_unid > 0 else 0.0
+        df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
     # ---------------------------------------------------------
     # ENCABEZADO Y KPIS
     # ---------------------------------------------------------
