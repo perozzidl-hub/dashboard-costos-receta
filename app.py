@@ -293,7 +293,7 @@ if tipo_seleccionado != "Todos los Tipos":
 st.sidebar.divider()
 
 if vista == "🔎 Análisis por Producto":
-    # ---------------------------------------------------------
+   # ---------------------------------------------------------
     # SECCIÓN: SELECCIÓN DE PRODUCTO Y FILTRADO DINÁMICO
     # ---------------------------------------------------------
     st.sidebar.header("📦 Seleccionar Producto")
@@ -302,7 +302,6 @@ if vista == "🔎 Análisis por Producto":
     articulos_df = df_ventas_filt[["Cod. Venta", col_nombre_art]].drop_duplicates().sort_values(col_nombre_art)
 
     if not articulos_df.empty:
-        # Configurar opciones incluyendo "Todos los Artículos"
         opciones_dict = {"Todos los Artículos": "TODOS"}
         for _, row in articulos_df.iterrows():
             try:
@@ -314,7 +313,6 @@ if vista == "🔎 Análisis por Producto":
         item_seleccionado = st.sidebar.selectbox("Seleccionar Artículo:", list(opciones_dict.keys()))
         cod_art = opciones_dict[item_seleccionado]
 
-        # Filtrado del DataFrame según la selección
         if cod_art == "TODOS":
             nombre_art = "Consolidado - Todos los Artículos"
             tipo_prod = "P / R"
@@ -326,12 +324,21 @@ if vista == "🔎 Análisis por Producto":
             df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
             tipo_prod = ventas_prod["Tipo_Producto"].iloc[0] if ("Tipo_Producto" in ventas_prod.columns and not ventas_prod.empty) else "P"
 
-        # CÁLCULO DE FACTURACIÓN NETA (Para evitar el NameError en draw_kpi)
-        col_fact = "Total" if "Total" in ventas_prod.columns else ("Monto" if "Monto" in ventas_prod.columns else None)
-        if col_fact and not ventas_prod.empty:
-            fact_neta = float(ventas_prod[col_fact].sum())
-        else:
-            fact_neta = 0.0
+        # ---------------------------------------------------------
+        # CÁLCULOS METRICAS DE KPIS
+        # ---------------------------------------------------------
+        col_fact = "Facturación Neta" if "Facturación Neta" in ventas_prod.columns else ("Total" if "Total" in ventas_prod.columns else "Monto")
+        col_vol = "Físicos" if "Físicos" in ventas_prod.columns else ("Cantidad" if "Cantidad" in ventas_prod.columns else None)
+
+        fact_neta = float(ventas_prod[col_fact].sum()) if (col_fact in ventas_prod.columns and not ventas_prod.empty) else 0.0
+        costo_total_calculado = float(ventas_prod["COSTO_TOTAL_REAL"].sum()) if ("COSTO_TOTAL_REAL" in ventas_prod.columns and not ventas_prod.empty) else 0.0
+        volumen_unid = float(ventas_prod[col_vol].sum()) if (col_vol and col_vol in ventas_prod.columns and not ventas_prod.empty) else 0.0
+
+        contribucion_marg = fact_neta - costo_total_calculado
+        pct_margen = (contribucion_marg / fact_neta * 100) if fact_neta > 0 else 0.0
+
+        precio_prom_unit = (fact_neta / volumen_unid) if volumen_unid > 0 else 0.0
+        costo_unitario_real = (costo_total_calculado / volumen_unid) if volumen_unid > 0 else 0.0
 
     else:
         st.warning("No hay productos disponibles para los filtros seleccionados.")
