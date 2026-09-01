@@ -413,6 +413,9 @@ if vista == "🔎 Análisis por Producto":
    # ---------------------------------------------------------
     # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
     # ---------------------------------------------------------
+   # ---------------------------------------------------------
+    # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
+    # ---------------------------------------------------------
     st.markdown("### 📈 Variación Porcentual Acumulada del Producto (% Var)")
 
     # Filtro base para historia completa del producto seleccionado
@@ -420,19 +423,30 @@ if vista == "🔎 Análisis por Producto":
     if locacion_seleccionada != "Todas las Locaciones":
         df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
 
-    # Agrupación mensual
+    # Asegurar que la columna FECHA sea datetime para la agrupación por mes
+    if "FECHA" in df_hist.columns:
+        df_hist["FECHA"] = pd.to_datetime(df_hist["FECHA"], errors="coerce")
+        # Generar clave de ordenamiento por año-mes y etiqueta legible (ej: may26, jun26)
+        df_hist["Periodo_Orden"] = df_hist["FECHA"].dt.to_period("M")
+        df_hist["Mes_Label"] = df_hist["FECHA"].dt.strftime("%b%y").str.lower()
+    else:
+        df_hist["Periodo_Orden"] = df_hist["Mes_Venta"]
+        df_hist["Mes_Label"] = df_hist["Mes_Venta"]
+
+    # Agrupación mensual usando la clave temporal para mantener el orden cronológico
     df_trend = (
-        df_hist.groupby("Mes_Venta")
+        df_hist.groupby(["Periodo_Orden", "Mes_Label"])
         .agg(
             Volumen=("Físicos", "sum"),
             Facturacion_Neta=("Facturación Neta", "sum"),
             Costo_Total=("COSTO_TOTAL_REAL", "sum"),
         )
         .reset_index()
+        .sort_values("Periodo_Orden")
     )
 
-    # Filtrar registros sin fecha válida y ordenar temporalmente
-    df_trend = df_trend[df_trend["Mes_Venta"] != "Sin Fecha"].sort_values("Mes_Venta")
+    # Filtrar registros nulos/vacíos
+    df_trend = df_trend.dropna(subset=["Periodo_Orden"])
 
     if not df_trend.empty and df_trend["Volumen"].sum() > 0:
         # 1. Cálculo de métricas unitarias absolutas
@@ -462,7 +476,7 @@ if vista == "🔎 Análisis por Producto":
 
         # 4. Formatear DataFrame a formato largo (Melt) para Plotly
         df_plot = df_trend.melt(
-            id_vars=["Mes_Venta"],
+            id_vars=["Mes_Label"],
             value_vars=["% Var Facturación Unit.", "% Var Costo Unit.", "% Var Contribución Marg."],
             var_name="Métrica",
             value_name="Variación_Pct",
@@ -471,7 +485,7 @@ if vista == "🔎 Análisis por Producto":
         # 5. Construcción del gráfico de líneas unificado
         fig_evolucion = px.line(
             df_plot,
-            x="Mes_Venta",
+            x="Mes_Label",
             y="Variación_Pct",
             color="Métrica",
             markers=True,
@@ -483,6 +497,9 @@ if vista == "🔎 Análisis por Producto":
                 "% Var Contribución Marg.": "#38BDF8", # Azul
             },
         )
+
+        # Configuración explícita del eje X como categoría (evita la interpolación por días de Plotly)
+        fig_evolucion.update_xaxes(type="category")
 
         # Customización visual del Tooltip y Ejes
         fig_evolucion.update_traces(
