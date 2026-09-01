@@ -408,6 +408,109 @@ if vista == "🔎 Análisis por Producto":
     st.divider()
 
     # ---------------------------------------------------------
+    # NUEVA SECCIÓN: EVOLUCIÓN TEMPORAL COMPARATIVA (GRÁFICOS DE LÍNEAS)
+    # ---------------------------------------------------------
+    st.markdown("### 📈 Evolución Temporal Unitaria del Producto")
+
+    # Filtro base para historia completa del producto seleccionado (respetando filtro de locación si aplica)
+    df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
+    if locacion_seleccionada != "Todas las Locaciones":
+        df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
+
+    # Agrupación mensual
+    df_trend = (
+        df_hist.groupby("Mes_Venta")
+        .agg(
+            Volumen=("Físicos", "sum"),
+            Facturacion_Neta=("Facturación Neta", "sum"),
+            Costo_Total=("COSTO_TOTAL_REAL", "sum"),
+        )
+        .reset_index()
+    )
+
+    # Filtrar registros sin fecha válida
+    df_trend = df_trend[df_trend["Mes_Venta"] != "Sin Fecha"].sort_values("Mes_Venta")
+
+    if not df_trend.empty and df_trend["Volumen"].sum() > 0:
+        # Cálculo de métricas unitarias
+        df_trend["Facturacion_Unitaria"] = df_trend.apply(
+            lambda r: (r["Facturacion_Neta"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
+        )
+        df_trend["Costo_Unitario"] = df_trend.apply(
+            lambda r: (r["Costo_Total"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
+        )
+        df_trend["CM_Unitaria"] = df_trend["Facturacion_Unitaria"] - df_trend["Costo_Unitario"]
+
+        l1, l2, l3 = st.columns(3)
+
+        # 1. Facturación Unitaria
+        with l1:
+            fig_fact_u = px.line(
+                df_trend,
+                x="Mes_Venta",
+                y="Facturacion_Unitaria",
+                markers=True,
+                title="Facturación Unitaria ($/u)",
+                template="plotly_dark",
+            )
+            fig_fact_u.update_traces(line_color="#4ADE80", line_width=3, marker_size=7)
+            fig_fact_u.update_layout(
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
+                height=300,
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis_title="",
+                yaxis_title="",
+            )
+            st.plotly_chart(fig_fact_u, config=plotly_config)
+
+        # 2. Costo Unitario Real
+        with l2:
+            fig_cost_u = px.line(
+                df_trend,
+                x="Mes_Venta",
+                y="Costo_Unitario",
+                markers=True,
+                title="Costo Unitario Real ($/u)",
+                template="plotly_dark",
+            )
+            fig_cost_u.update_traces(line_color="#FBBF24", line_width=3, marker_size=7)
+            fig_cost_u.update_layout(
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
+                height=300,
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis_title="",
+                yaxis_title="",
+            )
+            st.plotly_chart(fig_cost_u, config=plotly_config)
+
+        # 3. Contribución Marginal Unitaria
+        with l3:
+            fig_cm_u = px.line(
+                df_trend,
+                x="Mes_Venta",
+                y="CM_Unitaria",
+                markers=True,
+                title="Contribución Marg. Unitaria ($/u)",
+                template="plotly_dark",
+            )
+            fig_cm_u.update_traces(line_color="#38BDF8", line_width=3, marker_size=7)
+            fig_cm_u.update_layout(
+                paper_bgcolor="#0B0E14",
+                plot_bgcolor="#0B0E14",
+                height=300,
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis_title="",
+                yaxis_title="",
+            )
+            st.plotly_chart(fig_cm_u, config=plotly_config)
+    else:
+        st.info("ℹ️ No hay suficiente historial temporal o volumen de ventas para graficar la evolución mensual.")
+
+    st.divider()
+
+    # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
     # ---------------------------------------------------------
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
