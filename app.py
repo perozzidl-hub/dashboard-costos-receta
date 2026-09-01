@@ -410,9 +410,12 @@ if vista == "🔎 Análisis por Producto":
     # ---------------------------------------------------------
     # NUEVA SECCIÓN: EVOLUCIÓN TEMPORAL COMPARATIVA (GRÁFICOS DE LÍNEAS)
     # ---------------------------------------------------------
-    st.markdown("### 📈 Evolución Temporal Unitaria del Producto")
+   # ---------------------------------------------------------
+    # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
+    # ---------------------------------------------------------
+    st.markdown("### 📈 Variación Porcentual Acumulada del Producto (% Var)")
 
-    # Filtro base para historia completa del producto seleccionado (respetando filtro de locación si aplica)
+    # Filtro base para historia completa del producto seleccionado
     df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
     if locacion_seleccionada != "Todas las Locaciones":
         df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
@@ -428,11 +431,11 @@ if vista == "🔎 Análisis por Producto":
         .reset_index()
     )
 
-    # Filtrar registros sin fecha válida
+    # Filtrar registros sin fecha válida y ordenar temporalmente
     df_trend = df_trend[df_trend["Mes_Venta"] != "Sin Fecha"].sort_values("Mes_Venta")
 
     if not df_trend.empty and df_trend["Volumen"].sum() > 0:
-        # Cálculo de métricas unitarias
+        # 1. Cálculo de métricas unitarias absolutas
         df_trend["Facturacion_Unitaria"] = df_trend.apply(
             lambda r: (r["Facturacion_Neta"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
         )
@@ -441,74 +444,73 @@ if vista == "🔎 Análisis por Producto":
         )
         df_trend["CM_Unitaria"] = df_trend["Facturacion_Unitaria"] - df_trend["Costo_Unitario"]
 
-        l1, l2, l3 = st.columns(3)
+        # 2. Tomar valores base del primer período (Base 0%)
+        base_fact = df_trend["Facturacion_Unitaria"].iloc[0]
+        base_costo = df_trend["Costo_Unitario"].iloc[0]
+        base_cm = df_trend["CM_Unitaria"].iloc[0]
 
-        # 1. Facturación Unitaria
-        with l1:
-            fig_fact_u = px.line(
-                df_trend,
-                x="Mes_Venta",
-                y="Facturacion_Unitaria",
-                markers=True,
-                title="Facturación Unitaria ($/u)",
-                template="plotly_dark",
-            )
-            fig_fact_u.update_traces(line_color="#4ADE80", line_width=3, marker_size=7)
-            fig_fact_u.update_layout(
-                paper_bgcolor="#0B0E14",
-                plot_bgcolor="#0B0E14",
-                height=300,
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis_title="",
-                yaxis_title="",
-            )
-            st.plotly_chart(fig_fact_u, config=plotly_config)
+        # 3. Calcular % de Variación Acumulada respecto al periodo inicial
+        df_trend["% Var Facturación Unit."] = (
+            ((df_trend["Facturacion_Unitaria"] - base_fact) / base_fact * 100) if base_fact > 0 else 0.0
+        )
+        df_trend["% Var Costo Unit."] = (
+            ((df_trend["Costo_Unitario"] - base_costo) / base_costo * 100) if base_costo > 0 else 0.0
+        )
+        df_trend["% Var Contribución Marg."] = (
+            ((df_trend["CM_Unitaria"] - base_cm) / base_cm * 100) if base_cm > 0 else 0.0
+        )
 
-        # 2. Costo Unitario Real
-        with l2:
-            fig_cost_u = px.line(
-                df_trend,
-                x="Mes_Venta",
-                y="Costo_Unitario",
-                markers=True,
-                title="Costo Unitario Real ($/u)",
-                template="plotly_dark",
-            )
-            fig_cost_u.update_traces(line_color="#FBBF24", line_width=3, marker_size=7)
-            fig_cost_u.update_layout(
-                paper_bgcolor="#0B0E14",
-                plot_bgcolor="#0B0E14",
-                height=300,
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis_title="",
-                yaxis_title="",
-            )
-            st.plotly_chart(fig_cost_u, config=plotly_config)
+        # 4. Formatear DataFrame a formato largo (Melt) para Plotly
+        df_plot = df_trend.melt(
+            id_vars=["Mes_Venta"],
+            value_vars=["% Var Facturación Unit.", "% Var Costo Unit.", "% Var Contribución Marg."],
+            var_name="Métrica",
+            value_name="Variación_Pct",
+        )
 
-        # 3. Contribución Marginal Unitaria
-        with l3:
-            fig_cm_u = px.line(
-                df_trend,
-                x="Mes_Venta",
-                y="CM_Unitaria",
-                markers=True,
-                title="Contribución Marg. Unitaria ($/u)",
-                template="plotly_dark",
-            )
-            fig_cm_u.update_traces(line_color="#38BDF8", line_width=3, marker_size=7)
-            fig_cm_u.update_layout(
-                paper_bgcolor="#0B0E14",
-                plot_bgcolor="#0B0E14",
-                height=300,
-                margin=dict(l=10, r=10, t=40, b=10),
-                xaxis_title="",
-                yaxis_title="",
-            )
-            st.plotly_chart(fig_cm_u, config=plotly_config)
+        # 5. Construcción del gráfico de líneas unificado
+        fig_evolucion = px.line(
+            df_plot,
+            x="Mes_Venta",
+            y="Variación_Pct",
+            color="Métrica",
+            markers=True,
+            title="Comparativo de Tendencias: % de Incremento vs. Período Base",
+            template="plotly_dark",
+            color_discrete_map={
+                "% Var Facturación Unit.": "#4ADE80",  # Verde
+                "% Var Costo Unit.": "#FBBF24",        # Amarillo/Naranja
+                "% Var Contribución Marg.": "#38BDF8", # Azul
+            },
+        )
+
+        # Customización visual del Tooltip y Ejes
+        fig_evolucion.update_traces(
+            line=dict(width=3),
+            marker=dict(size=8),
+            hovertemplate="%{y:+.2f}%",
+        )
+        fig_evolucion.update_layout(
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            height=420,
+            margin=dict(l=10, r=20, t=45, b=10),
+            xaxis_title="",
+            yaxis_title="% Variación Acumulada",
+            yaxis=dict(ticksuffix="%"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                title_text="",
+            ),
+        )
+
+        st.plotly_chart(fig_evolucion, config=plotly_config)
     else:
-        st.info("ℹ️ No hay suficiente historial temporal o volumen de ventas para graficar la evolución mensual.")
-
-    st.divider()
+        st.info("ℹ️ No hay suficiente historial temporal para calcular la evolución porcentual.")
 
     # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
