@@ -746,16 +746,40 @@ elif vista == "📊 Contribuciones y Desperdicio":
     # ---------------------------------------------------------
     st.title("📊 Análisis de Contribuciones, Estándar y Desperdicio")
 
+    col_nom = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
+
+    # Selector dinámico de Producto específico para esta vista
+    st.sidebar.divider()
+    st.sidebar.header("🎯 Detalle por Producto")
+    articulos_contrib = df_ventas_filt[["Cod. Venta", col_nom]].drop_duplicates().sort_values(col_nom)
+    
+    opciones_prod_contrib = {"Todos los Productos": "TODOS"}
+    for _, row in articulos_contrib.iterrows():
+        try:
+            cod_v = int(row["Cod. Venta"])
+        except (ValueError, TypeError):
+            cod_v = row["Cod. Venta"]
+        opciones_prod_contrib[f"{cod_v} - {row[col_nom]}"] = cod_v
+
+    prod_contrib_sel = st.sidebar.selectbox("Seleccionar Producto:", list(opciones_prod_contrib.keys()))
+    cod_prod_contrib = opciones_prod_contrib[prod_contrib_sel]
+
+    # Filtrar por el producto seleccionado si no es "TODOS"
+    df_ventas_vista = df_ventas_filt.copy()
+    if cod_prod_contrib != "TODOS":
+        df_ventas_vista = df_ventas_vista[df_ventas_vista["Cod. Venta"] == cod_prod_contrib]
+
+    # Evaluamos si activamos la vista comparativa por Locación
+    comparar_por_locacion = (locacion_seleccionada == "Todas las Locaciones") and (cod_prod_contrib != "TODOS")
+
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Categoría: <strong>{tipo_seleccionado}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Categoría: <strong>{tipo_seleccionado}</strong> | Producto: <strong>{prod_contrib_sel}</strong>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    col_nom = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
 
     # 1. Agrupar costos teóricos de la Receta por producto
     if not receta_precios.empty:
@@ -768,9 +792,11 @@ elif vista == "📊 Contribuciones y Desperdicio":
     else:
         receta_summary = pd.DataFrame(columns=["Cod. Venta", "Costo_Teorico_Unitario"])
 
-    # 2. Agrupar Ventas por producto
+    # 2. Agrupar Ventas (por Producto si es vista general, o por Locación si es comparativo)
+    group_cols = ["LOCACION - SAP", "Cod. Venta", col_nom, "Tipo_Producto"] if comparar_por_locacion else ["Cod. Venta", col_nom, "Tipo_Producto"]
+
     ventas_contrib = (
-        df_ventas_filt.groupby(["Cod. Venta", col_nom, "Tipo_Producto"])
+        df_ventas_vista.groupby(group_cols)
         .agg(
             Volumen_Vendida=("Físicos", "sum"),
             Facturacion_Neta=("Facturación Neta", "sum"),
@@ -791,16 +817,13 @@ elif vista == "📊 Contribuciones y Desperdicio":
         lambda r: (r["Costo_Total_Real"] / r["Volumen_Vendida"]) if r["Volumen_Vendida"] > 0 else 0.0, axis=1
     )
 
-    # Para Reventa (R), el costo teórico es igual al de la compra
     df_contrib["Costo_Teorico_Unit"] = df_contrib.apply(
         lambda r: r["Costo_Real_Unit"] if r["Tipo_Producto"] == "R" else r["Costo_Teorico_Unitario"], axis=1
     )
 
-    # Desperdicio = Costo Real registrado - Costo Teórico BOM
     df_contrib["Desperdicio_Unit"] = df_contrib["Costo_Real_Unit"] - df_contrib["Costo_Teorico_Unit"]
     df_contrib["Desperdicio_Total"] = df_contrib["Desperdicio_Unit"] * df_contrib["Volumen_Vendida"]
 
-    # Contribución Estándar (Teórica) vs. Real
     df_contrib["CM_Estandar_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Teorico_Unit"]
     df_contrib["CM_Real_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Real_Unit"]
 
@@ -811,8 +834,7 @@ elif vista == "📊 Contribuciones y Desperdicio":
         lambda r: (r["CM_Real_Unit"] / r["Facturacion_Unit"] * 100) if r["Facturacion_Unit"] > 0 else 0.0, axis=1
     )
 
-    # KPIS METRICAS DE DESPERDICIO Y CONTRIBUCIONES GLOBAL
-    tot_vol = df_contrib["Volumen_Vendida"].sum()
+    # KPIs GLOBALES DE LA VISTA
     tot_fact = df_contrib["Facturacion_Neta"].sum()
     tot_costo_real = df_contrib["Costo_Total_Real"].sum()
     tot_desperdicio = df_contrib["Desperdicio_Total"].sum()
@@ -831,24 +853,40 @@ elif vista == "📊 Contribuciones y Desperdicio":
 
     st.divider()
 
-    st.markdown("### 📋 Tabla Comparativa de Composiciones & Desperdicio por Producto")
+    # TITULO DINÁMICO DE LA TABLA
+    if comparar_por_locacion:
+        st.markdown(f"### 📍 Comparativo por Locación: **{prod_contrib_sel}**")
+        select_cols = [
+            "LOCACION - SAP", "Tipo_Producto", "Volumen_Vendida",
+            "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
+            "Costo_Real_Unit", "CM_Estandar_Unit", "% CM Estandar",
+            "CM_Real_Unit", "% CM Real", "Desperdicio_Total"
+        ]
+        col_names = [
+            "Locación SAP", "Tipo", "Volumen (u.)",
+            "Facturación Unit. ($)", "Costo Receta ($)", "Desperdicio Unit. ($)",
+            "Costo Real Unit. ($)", "CM Estándar ($)", "% CM Est.",
+            "CM Real ($)", "% CM Real", "Desperdicio Total ($)"
+        ]
+    else:
+        st.markdown("### 📋 Tabla Comparativa de Composiciones & Desperdicio por Producto")
+        select_cols = [
+            "Cod. Venta", col_nom, "Tipo_Producto", "Volumen_Vendida",
+            "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
+            "Costo_Real_Unit", "CM_Estandar_Unit", "% CM Estandar",
+            "CM_Real_Unit", "% CM Real", "Desperdicio_Total"
+        ]
+        col_names = [
+            "Cód. SAP", "Producto", "Tipo", "Volumen (u.)",
+            "Facturación Unit. ($)", "Costo Receta ($)", "Desperdicio Unit. ($)",
+            "Costo Real Unit. ($)", "CM Estándar ($)", "% CM Est.",
+            "CM Real ($)", "% CM Real", "Desperdicio Total ($)"
+        ]
 
-    # Selección visual de columnas para el usuario
-    col_export = df_contrib[[
-        "Cod. Venta", col_nom, "Tipo_Producto", "Volumen_Vendida",
-        "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
-        "Costo_Real_Unit", "CM_Estandar_Unit", "% CM Estandar",
-        "CM_Real_Unit", "% CM Real", "Desperdicio_Total"
-    ]].copy()
+    col_export = df_contrib[select_cols].copy()
+    col_export.columns = col_names
 
-    col_export.columns = [
-        "Cód. SAP", "Producto", "Tipo", "Volumen (u.)",
-        "Facturación Unit. ($)", "Costo Receta ($)", "Desperdicio Unit. ($)",
-        "Costo Real Unit. ($)", "CM Estándar ($)", "% CM Est.",
-        "CM Real ($)", "% CM Real", "Desperdicio Total ($)"
-    ]
-
-    # Formateador visual con colores
+    # Funciones de estilo
     def highlight_desperdicio(val):
         if isinstance(val, (int, float)):
             if val > 0:
@@ -886,9 +924,9 @@ elif vista == "📊 Contribuciones y Desperdicio":
 
     st.dataframe(styled_df, use_container_width=True, height=520)
 
-    # Botón para descargar reporte en Excel
+    # Descarga de datos
     st.download_button(
-        label="📥 Descargar Reporte de Contribuciones en Excel",
+        label="📥 Descargar Reporte en Excel",
         data=col_export.to_csv(index=False).encode('utf-8'),
         file_name=f"Reporte_Contribuciones_{mes_seleccionado}.csv",
         mime="text/csv",
