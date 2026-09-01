@@ -796,7 +796,7 @@ elif vista == "📊 Contribuciones y Desperdicio":
         lambda r: r["Costo_Real_Unit"] if r["Tipo_Producto"] == "R" else r["Costo_Teorico_Unitario"], axis=1
     )
 
-    # Desperdicio = Costo Real registrado - Costo Teórico BOM (o Desvío de Margen)
+    # Desperdicio = Costo Real registrado - Costo Teórico BOM
     df_contrib["Desperdicio_Unit"] = df_contrib["Costo_Real_Unit"] - df_contrib["Costo_Teorico_Unit"]
     df_contrib["Desperdicio_Total"] = df_contrib["Desperdicio_Unit"] * df_contrib["Volumen_Vendida"]
 
@@ -867,9 +867,8 @@ elif vista == "📊 Contribuciones y Desperdicio":
                 return 'color: #38BDF8; font-weight: bold;'
         return ''
 
- styled_df = (
-    col_export.style.format(
-        {
+    styled_df = (
+        col_export.style.format({
             "Volumen (u.)": "{:,.0f}",
             "Facturación Unit. ($)": "${:,.2f}",
             "Costo Receta ($)": "${:,.2f}",
@@ -880,14 +879,10 @@ elif vista == "📊 Contribuciones y Desperdicio":
             "CM Real ($)": "${:,.2f}",
             "% CM Real": "{:.1f}%",
             "Desperdicio Total ($)": "${:,.2f}",
-        }
+        })
+        .map(highlight_desperdicio, subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"])
+        .map(highlight_cm, subset=["% CM Est.", "% CM Real"])
     )
-    .map(
-        highlight_desperdicio,
-        subset=["Desperdicio Unit. ($)", "Desperdicio Total ($)"],
-    )
-    .map(highlight_cm, subset=["% CM Est.", "% CM Real"])
-)
 
     st.dataframe(styled_df, use_container_width=True, height=520)
 
