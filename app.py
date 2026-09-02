@@ -725,6 +725,7 @@ if vista == "🔎 Análisis por Producto":
         
     else:
         st.info("ℹ️ **Producto de Reventa (R)**: El costo total proviene directamente de la columna **TOTAL PRODUCTO TERCEROS** en el registro de ventas.")
+
    elif vista == "🌐 Visión General de Compañía":
     # ---------------------------------------------------------
     # VISTA GENERAL DE COMPAÑÍA
