@@ -438,6 +438,7 @@ if vista == "🔎 Análisis por Producto":
         if cod_art != "TODOS"
         else df_ventas.copy()
     )
+    
     if locacion_seleccionada != "Todas las Locaciones":
         df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
 
@@ -465,55 +466,49 @@ if vista == "🔎 Análisis por Producto":
     if not df_trend.empty and df_trend["Volumen"].sum() > 0:
         # Cálculo de valores absolutos unitarios en pesos
         df_trend["Facturación Unit. ($)"] = df_trend.apply(
-            lambda r: (r["Facturacion_Neta"] / r["Volumen"])
-            if r["Volumen"] > 0
-            else 0.0,
-            axis=1,
+            lambda r: (r["Facturacion_Neta"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
         )
         df_trend["Costo Unit. ($)"] = df_trend.apply(
-            lambda r: (r["Costo_Total"] / r["Volumen"])
-            if r["Volumen"] > 0
-            else 0.0,
-            axis=1,
+            lambda r: (r["Costo_Total"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
         )
         df_trend["Contribución Marg. Unit. ($)"] = (
             df_trend["Facturación Unit. ($)"] - df_trend["Costo Unit. ($)"]
         )
 
-        # Reestructuración para Plotly
-        df_plot = df_trend.melt(
+        # Crear dos columnas para mostrar los gráficos lado a lado
+        col_chart1, col_chart2 = st.columns(2)
+
+        # ==========================================
+        # GRÁFICO 1: LÍNEAS (Facturación y Costos)
+        # ==========================================
+        df_plot_line = df_trend.melt(
             id_vars=["Mes_Label"],
-            value_vars=[
-                "Facturación Unit. ($)",
-                "Costo Unit. ($)",
-                "Contribución Marg. Unit. ($)",
-            ],
+            value_vars=["Facturación Unit. ($)", "Costo Unit. ($)"],
             var_name="Métrica",
             value_name="Monto_Unitario",
         )
 
-        fig_evolucion = px.line(
-            df_plot,
+        fig_line = px.line(
+            df_plot_line,
             x="Mes_Label",
             y="Monto_Unitario",
             color="Métrica",
             markers=True,
-            title="Comparativo de Tendencias: Montos Unitarios ($) por Período",
+            title="Evolución: Facturación vs. Costo Unit.",
             template="plotly_dark",
             color_discrete_map={
-                "Facturación Unit. ($)": "#4ADE80",
-                "Costo Unit. ($)": "#FBBF24",
-                "Contribución Marg. Unit. ($)": "#38BDF8",
+                "Facturación Unit. ($)": "#4ADE80", # Verde
+                "Costo Unit. ($)": "#FBBF24",       # Amarillo
             },
         )
 
-        fig_evolucion.update_xaxes(type="category")
-        fig_evolucion.update_traces(
+        fig_line.update_xaxes(type="category")
+        fig_line.update_traces(
             line=dict(width=3),
             marker=dict(size=8),
             hovertemplate="$%{y:,.2f}",
         )
-        fig_evolucion.update_layout(
+        fig_line.update_layout(
             paper_bgcolor="#0B0E14",
             plot_bgcolor="#0B0E14",
             height=420,
@@ -531,12 +526,47 @@ if vista == "🔎 Análisis por Producto":
             ),
         )
 
-        st.plotly_chart(fig_evolucion, config=plotly_config)
-    else:
-        st.info(
-            "ℹ️ No hay suficiente historial temporal para calcular la evolución de valores unitarios."
+        with col_chart1:
+            st.plotly_chart(fig_line, use_container_width=True, config=plotly_config)
+
+        # ==========================================
+        # GRÁFICO 2: BARRAS HORIZONTALES (Contribución)
+        # ==========================================
+        fig_bar = px.bar(
+            df_trend,
+            x="Contribución Marg. Unit. ($)",
+            y="Mes_Label",
+            orientation="h", # Convierte el gráfico a barras horizontales
+            title="Evolución: Contribución Marg. Unit.",
+            template="plotly_dark",
+            color_discrete_sequence=["#38BDF8"], # Celeste
+            text="Contribución Marg. Unit. ($)"  # Agrega la etiqueta de texto en la barra
         )
 
+        # Formatear el texto de las barras y el hover
+        fig_bar.update_traces(
+            texttemplate="$%{text:,.2f}", 
+            textposition="inside",
+            hovertemplate="Mes: %{y}<br>CM: $%{x:,.2f}"
+        )
+        
+        fig_bar.update_layout(
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            height=420,
+            margin=dict(l=10, r=20, t=45, b=10),
+            xaxis_title="Monto Unitario ($)",
+            yaxis_title="",
+            xaxis=dict(tickprefix="$"),
+            yaxis=dict(autorange="reversed"), # Invierte el eje Y para que el primer mes quede arriba
+            showlegend=False
+        )
+
+        with col_chart2:
+            st.plotly_chart(fig_bar, use_container_width=True, config=plotly_config)
+
+    else:
+        st.info("ℹ️ No hay suficiente historial temporal para calcular la evolución de valores unitarios.")
     # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
     # ---------------------------------------------------------
