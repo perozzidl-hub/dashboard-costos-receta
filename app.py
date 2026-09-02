@@ -744,11 +744,11 @@ elif vista == "📊 Contribuciones y Desperdicio":
     # ---------------------------------------------------------
     # VISTA: CONTRIBUCIONES, COSTOS TEÓRICOS Y DESPERDICIO
     # ---------------------------------------------------------
-    st.title("📊 Análisis de Contribuciones, Estándar y Desperdicio")
+    st.title("📊 Análisis de Contribuciones y Escenarios 'What-If'")
 
     col_nom = "Nombre" if "Nombre" in df_ventas_filt.columns else "Artículo"
 
-    # Selector dinámico de Producto específico para esta vista
+    # Selector dinámico de Producto
     st.sidebar.divider()
     st.sidebar.header("🎯 Detalle por Producto")
     articulos_contrib = df_ventas_filt[["Cod. Venta", col_nom]].drop_duplicates().sort_values(col_nom)
@@ -764,18 +764,31 @@ elif vista == "📊 Contribuciones y Desperdicio":
     prod_contrib_sel = st.sidebar.selectbox("Seleccionar Producto:", list(opciones_prod_contrib.keys()))
     cod_prod_contrib = opciones_prod_contrib[prod_contrib_sel]
 
+    # ---------------------------------------------------------
+    # CONTROLES SIMULACIÓN WHAT-IF (SLIDERS DE SENSIBILIDAD)
+    # ---------------------------------------------------------
+    st.sidebar.divider()
+    st.sidebar.header("🔮 Simulación 'What-If'")
+    
+    var_fact = st.sidebar.slider("Var. Facturación (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
+    var_receta = st.sidebar.slider("Var. Costo Receta (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
+    var_desperdicio = st.sidebar.slider("Var. Desperdicio (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
+
     # Filtrar por el producto seleccionado si no es "TODOS"
     df_ventas_vista = df_ventas_filt.copy()
     if cod_prod_contrib != "TODOS":
         df_ventas_vista = df_ventas_vista[df_ventas_vista["Cod. Venta"] == cod_prod_contrib]
 
-    # Evaluamos si activamos la vista comparativa por Locación
     comparar_por_locacion = (locacion_seleccionada == "Todas las Locaciones") and (cod_prod_contrib != "TODOS")
+
+    # Banner informativo
+    simulacion_activa = (var_fact != 0.0 or var_receta != 0.0 or var_desperdicio != 0.0)
+    texto_sim = f" | 🔮 <strong>Escenario Simulado:</strong> (Fact: {var_fact:+.0f}%, Receta: {var_receta:+.0f}%, Desp: {var_desperdicio:+.0f}%)" if simulacion_activa else ""
 
     st.markdown(
         f"""
         <div class="month-banner">
-            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Categoría: <strong>{tipo_seleccionado}</strong> | Producto: <strong>{prod_contrib_sel}</strong>
+            📅 Período: <strong>{mes_seleccionado}</strong> | 📍 Locación: <strong>{locacion_seleccionada}</strong> | Categoría: <strong>{tipo_seleccionado}</strong> | Producto: <strong>{prod_contrib_sel}</strong>{texto_sim}
         </div>
         """,
         unsafe_allow_html=True,
@@ -809,20 +822,30 @@ elif vista == "📊 Contribuciones y Desperdicio":
     df_contrib = pd.merge(ventas_contrib, receta_summary, on="Cod. Venta", how="left")
     df_contrib["Costo_Teorico_Unitario"] = df_contrib["Costo_Teorico_Unitario"].fillna(0.0)
 
-    # 4. Cálculo de unitarios y desvíos/desperdicio
-    df_contrib["Facturacion_Unit"] = df_contrib.apply(
+    # 4. Cálculo de unitarios base
+    df_contrib["Facturacion_Unit_Base"] = df_contrib.apply(
         lambda r: (r["Facturacion_Neta"] / r["Volumen_Vendida"]) if r["Volumen_Vendida"] > 0 else 0.0, axis=1
     )
-    df_contrib["Costo_Real_Unit"] = df_contrib.apply(
+    df_contrib["Costo_Real_Unit_Base"] = df_contrib.apply(
         lambda r: (r["Costo_Total_Real"] / r["Volumen_Vendida"]) if r["Volumen_Vendida"] > 0 else 0.0, axis=1
     )
-
-    df_contrib["Costo_Teorico_Unit"] = df_contrib.apply(
-        lambda r: r["Costo_Real_Unit"] if r["Tipo_Producto"] == "R" else r["Costo_Teorico_Unitario"], axis=1
+    df_contrib["Costo_Teorico_Unit_Base"] = df_contrib.apply(
+        lambda r: r["Costo_Real_Unit_Base"] if r["Tipo_Producto"] == "R" else r["Costo_Teorico_Unitario"], axis=1
     )
+    df_contrib["Desperdicio_Unit_Base"] = df_contrib["Costo_Real_Unit_Base"] - df_contrib["Costo_Teorico_Unit_Base"]
 
-    df_contrib["Desperdicio_Unit"] = df_contrib["Costo_Real_Unit"] - df_contrib["Costo_Teorico_Unit"]
+    # 5. CÁLCULO WHAT-IF / SENSIBILIDAD
+    df_contrib["Facturacion_Unit"] = df_contrib["Facturacion_Unit_Base"] * (1 + var_fact / 100.0)
+    df_contrib["Costo_Teorico_Unit"] = df_contrib["Costo_Teorico_Unit_Base"] * (1 + var_receta / 100.0)
+    df_contrib["Desperdicio_Unit"] = df_contrib["Desperdicio_Unit_Base"] * (1 + var_desperdicio / 100.0)
+    
+    # Recalcular Costo Real Unitario = Nuevo Costo Receta + Nuevo Desperdicio
+    df_contrib["Costo_Real_Unit"] = df_contrib["Costo_Teorico_Unit"] + df_contrib["Desperdicio_Unit"]
+
+    # Totales y Márgenes Simulados
+    df_contrib["Facturacion_Neta_Sim"] = df_contrib["Facturacion_Unit"] * df_contrib["Volumen_Vendida"]
     df_contrib["Desperdicio_Total"] = df_contrib["Desperdicio_Unit"] * df_contrib["Volumen_Vendida"]
+    df_contrib["Costo_Total_Real_Sim"] = df_contrib["Costo_Real_Unit"] * df_contrib["Volumen_Vendida"]
 
     df_contrib["CM_Estandar_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Teorico_Unit"]
     df_contrib["CM_Real_Unit"] = df_contrib["Facturacion_Unit"] - df_contrib["Costo_Real_Unit"]
@@ -834,28 +857,38 @@ elif vista == "📊 Contribuciones y Desperdicio":
         lambda r: (r["CM_Real_Unit"] / r["Facturacion_Unit"] * 100) if r["Facturacion_Unit"] > 0 else 0.0, axis=1
     )
 
-    # KPIs GLOBALES DE LA VISTA
-    tot_fact = df_contrib["Facturacion_Neta"].sum()
-    tot_costo_real = df_contrib["Costo_Total_Real"].sum()
+    # KPIs GLOBALES SIMULADOS
+    tot_fact = df_contrib["Facturacion_Neta_Sim"].sum()
+    tot_costo_real = df_contrib["Costo_Total_Real_Sim"].sum()
     tot_desperdicio = df_contrib["Desperdicio_Total"].sum()
     tot_cm_real = tot_fact - tot_costo_real
     pct_desperdicio_sob_fact = (tot_desperdicio / tot_fact * 100) if tot_fact > 0 else 0.0
 
+    # Comparación de Variación vs. Base
+    tot_fact_base = (df_contrib["Facturacion_Unit_Base"] * df_contrib["Volumen_Vendida"]).sum()
+    tot_cm_real_base = tot_fact_base - (df_contrib["Costo_Real_Unit_Base"] * df_contrib["Volumen_Vendida"]).sum()
+
+    delta_fact_pct = ((tot_fact - tot_fact_base) / tot_fact_base * 100) if tot_fact_base > 0 else 0.0
+    delta_cm_pct = ((tot_cm_real - tot_cm_real_base) / tot_cm_real_base * 100) if tot_cm_real_base > 0 else 0.0
+
+    sub_fact = f"{delta_fact_pct:+.1f}% vs Base" if simulacion_activa else ""
+    sub_cm = f"{delta_cm_pct:+.1f}% vs Base | {(tot_cm_real/tot_fact*100) if tot_fact>0 else 0:.1f}% Margen" if simulacion_activa else f"{(tot_cm_real/tot_fact*100) if tot_fact>0 else 0:.1f}% Margen"
+
     dk1, dk2, dk3, dk4 = st.columns(4)
     with dk1:
-        draw_kpi("Facturación Neta", f"${tot_fact:,.2f}")
+        draw_kpi("Facturación Neta", f"${tot_fact:,.2f}", sub=sub_fact)
     with dk2:
         draw_kpi("Costo Real Total", f"${tot_costo_real:,.2f}", color_class="kpi-warning")
     with dk3:
         draw_kpi("Desperdicio / Desvío Total", f"${tot_desperdicio:,.2f}", sub=f"{pct_desperdicio_sob_fact:.1f}% de Venta", color_class="kpi-danger")
     with dk4:
-        draw_kpi("Contribución Marg. Real", f"${tot_cm_real:,.2f}", sub=f"{(tot_cm_real/tot_fact*100) if tot_fact>0 else 0:.1f}% Margen", color_class="kpi-neutral")
+        draw_kpi("Contribución Marg. Real", f"${tot_cm_real:,.2f}", sub=sub_cm, color_class="kpi-neutral")
 
     st.divider()
 
     # TITULO DINÁMICO DE LA TABLA
     if comparar_por_locacion:
-        st.markdown(f"### 📍 Comparativo por Locación: **{prod_contrib_sel}**")
+        st.markdown(f"### 📍 Comparativo por Locación: **{prod_contrib_sel}** {'(Simulado)' if simulacion_activa else ''}")
         select_cols = [
             "LOCACION - SAP", "Tipo_Producto", "Volumen_Vendida",
             "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
@@ -869,7 +902,7 @@ elif vista == "📊 Contribuciones y Desperdicio":
             "CM Real ($)", "% CM Real", "Desperdicio Total ($)"
         ]
     else:
-        st.markdown("### 📋 Tabla Comparativa de Composiciones & Desperdicio por Producto")
+        st.markdown(f"### 📋 Tabla Comparativa de Composiciones & Desperdicio {'(Simulado)' if simulacion_activa else ''}")
         select_cols = [
             "Cod. Venta", col_nom, "Tipo_Producto", "Volumen_Vendida",
             "Facturacion_Unit", "Costo_Teorico_Unit", "Desperdicio_Unit",
@@ -928,6 +961,6 @@ elif vista == "📊 Contribuciones y Desperdicio":
     st.download_button(
         label="📥 Descargar Reporte en Excel",
         data=col_export.to_csv(index=False).encode('utf-8'),
-        file_name=f"Reporte_Contribuciones_{mes_seleccionado}.csv",
+        file_name=f"Reporte_Contribuciones_Simulado_{mes_seleccionado}.csv",
         mime="text/csv",
     )
