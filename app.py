@@ -329,6 +329,13 @@ if vista == "🔎 Análisis por Producto":
             df_hist_base = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
             tipo_prod = ventas_prod["Tipo_Producto"].iloc[0] if ("Tipo_Producto" in ventas_prod.columns and not ventas_prod.empty) else "P"
 
+            # Selector de Vista de Costo (Real vs. Estándar)
+        tipo_costo_vista = st.sidebar.radio(
+            "📐 Tipo de Costo a Evaluar:",
+            ["Costo Real (Incluye Desperdicio)", "Costo Estándar (Receta Pura)"],
+            help="Selecciona si deseas ver la composición teórica de la receta o la real impactada por desviaciones."
+        )
+
         # CÁLCULOS METRICAS DE KPIS
         col_fact = "Facturación Neta" if "Facturación Neta" in ventas_prod.columns else ("Total" if "Total" in ventas_prod.columns else "Monto")
         col_vol = "Físicos" if "Físicos" in ventas_prod.columns else ("Cantidad" if "Cantidad" in ventas_prod.columns else None)
@@ -573,21 +580,22 @@ if vista == "🔎 Análisis por Producto":
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
     
     if tipo_prod == "P" and not receta_prod.empty:
-        st.markdown("### 📊 Composición de Insumos e Importes Totales")
+        # Evaluamos la opción del usuario en el Sidebar
+        mostrar_desperdicio = "Real" in tipo_costo_vista
+        
+        subtitulo_vista = "Costo Real con Desvíos/Desperdicio" if mostrar_desperdicio else "Costo Estándar (Receta Teórica)"
+        st.markdown(f"### 📊 Composición de Insumos e Importes Totales — <span style='color:#38BDF8'>{subtitulo_vista}</span>", unsafe_allow_html=True)
         
         # 1. Calculamos el Costo Teórico sumando los insumos
         costo_teorico_unit = receta_prod["Costo Insumo ($)"].sum()
         
         # 2. Calculamos el Desperdicio (Costo Real - Costo Teórico)
-        # Usamos 'costo_unitario_real' que ya calculaste arriba en la sección de KPIs
         desperdicio_unit = costo_unitario_real - costo_teorico_unit
-        
-        # Evitamos desperdicios negativos visuales si el costo teórico supera al real
         if desperdicio_unit < 0:
             desperdicio_unit = 0.0
             
-        # 3. Si hay desperdicio, lo inyectamos como un insumo más
-        if desperdicio_unit > 0:
+        # 3. Solo inyectamos el desperdicio si el usuario eligió "Costo Real"
+        if mostrar_desperdicio and desperdicio_unit > 0:
             fila_desperdicio = pd.DataFrame([{
                 "Cod. Venta": cod_art,
                 "Código Insumo": "DESP-001",
@@ -598,7 +606,7 @@ if vista == "🔎 Análisis por Producto":
             }])
             receta_prod = pd.concat([receta_prod, fila_desperdicio], ignore_index=True)
 
-        # 4. Ahora el total contempla los insumos + el desperdicio
+        # 4. El total reflejará la opción seleccionada
         total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
         
         col_g1, col_g2 = st.columns([3, 2])
@@ -607,7 +615,7 @@ if vista == "🔎 Análisis por Producto":
         
         insumos_unicos = df_sorted_desc["Insumo_Label"].tolist()
         
-        # 5. Asignación inteligente de colores (El desperdicio siempre en rojo)
+        # 5. Asignación de colores
         mapa_colores = {}
         idx_color = 0
         for insumo in insumos_unicos:
@@ -658,8 +666,10 @@ if vista == "🔎 Análisis por Producto":
                 textinfo="percent",
                 insidetextfont=dict(color="#0F172A", size=16, family="Arial Black"),
             )
+            
+            label_centro = "<b>Total Real</b>" if mostrar_desperdicio else "<b>Total Estándar</b>"
             fig_pie.add_annotation(
-                text=f"<b>Total Real</b><br>${total_costo_grafico:,.2f}",
+                text=f"{label_centro}<br>${total_costo_grafico:,.2f}",
                 x=0.5,
                 y=0.5,
                 font_size=13,
@@ -691,7 +701,6 @@ if vista == "🔎 Análisis por Producto":
         
         tabla_out_formatted = tabla_out.copy()
         
-        # Formateamos evitando errores si Cant. Teórica llega como string (ej: '-')
         def formato_cant(x):
             try: return f"{float(x):,.4f}"
             except: return str(x)
@@ -701,9 +710,10 @@ if vista == "🔎 Análisis por Producto":
         tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(lambda x: f"${x:,.2f}")
         tabla_out_formatted["% Participación"] = tabla_out_formatted["% Participación"].apply(lambda x: f"{x:.1f}%")
         
+        texto_sumatoria = "SUMATORIA TOTAL RECURSOS + DESVÍOS" if mostrar_desperdicio else "SUMATORIA TOTAL RECURSOS TEÓRICOS"
         fila_total = pd.DataFrame([{
             "Cód. Insumo": "TOTAL",
-            "Insumo": "SUMATORIA TOTAL RECURSOS + DESVÍOS",
+            "Insumo": texto_sumatoria,
             "Cant. Teórica": "-",
             "Precio Unit. ($)": "-",
             "Costo ($)": f"${total_costo_grafico:,.2f}",
@@ -715,7 +725,7 @@ if vista == "🔎 Análisis por Producto":
         
     else:
         st.info("ℹ️ **Producto de Reventa (R)**: El costo total proviene directamente de la columna **TOTAL PRODUCTO TERCEROS** en el registro de ventas.")
-elif vista == "🌐 Visión General de Compañía":
+   elif vista == "🌐 Visión General de Compañía":
     # ---------------------------------------------------------
     # VISTA GENERAL DE COMPAÑÍA
     # ---------------------------------------------------------
