@@ -428,108 +428,63 @@ if vista == "🔎 Análisis por Producto":
 
     st.divider()
 
-    # ---------------------------------------------------------
-    # EVOLUCIÓN TEMPORAL COMPARATIVA (% DE VARIACIÓN BASE 100)
-    # ---------------------------------------------------------
-    st.markdown("### 📈 Variación Porcentual Acumulada del Producto (% Var)")
+ import plotly.express as px
 
-    df_hist = df_ventas[df_ventas["Cod. Venta"] == cod_art].copy() if cod_art != "TODOS" else df_ventas.copy()
-    if locacion_seleccionada != "Todas las Locaciones":
-        df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
+# 1. Agrupar la información por Mes (asegúrate de que "Mes" sea tu columna de tiempo)
+# Asumiendo que df_prod_seleccionado es tu DataFrame filtrado por el producto actual
+df_tendencia = df_prod_seleccionado.groupby("Mes").agg(
+    Volumen=("Físicos", "sum"),
+    Facturacion=("Facturación Neta", "sum"),
+    Costo_Real=("COSTO_TOTAL_REAL", "sum")
+).reset_index()
 
-    if "FECHA" in df_hist.columns:
-        df_hist["FECHA"] = pd.to_datetime(df_hist["FECHA"], errors="coerce")
-        df_hist["Periodo_Orden"] = df_hist["FECHA"].dt.to_period("M")
-        df_hist["Mes_Label"] = df_hist["FECHA"].dt.strftime("%b%y").str.lower()
-    else:
-        df_hist["Periodo_Orden"] = df_hist["Mes_Venta"]
-        df_hist["Mes_Label"] = df_hist["Mes_Venta"]
+# 2. Calcular los valores unitarios absolutos
+df_tendencia["Facturación Unit. ($)"] = df_tendencia.apply(
+    lambda r: r["Facturacion"] / r["Volumen"] if r["Volumen"] > 0 else 0, axis=1
+)
+df_tendencia["Costo Unit. ($)"] = df_tendencia.apply(
+    lambda r: r["Costo_Real"] / r["Volumen"] if r["Volumen"] > 0 else 0, axis=1
+)
+df_tendencia["Contribución Unit. ($)"] = df_tendencia["Facturación Unit. ($)"] - df_tendencia["Costo Unit. ($)"]
 
-    df_trend = (
-        df_hist.groupby(["Periodo_Orden", "Mes_Label"])
-        .agg(
-            Volumen=("Físicos", "sum"),
-            Facturacion_Neta=("Facturación Neta", "sum"),
-            Costo_Total=("COSTO_TOTAL_REAL", "sum"),
-        )
-        .reset_index()
-        .sort_values("Periodo_Orden")
-    )
+# 3. Crear el gráfico de líneas con puntos (markers=True)
+fig_tendencia = px.line(
+    df_tendencia,
+    x="Mes",
+    y=["Facturación Unit. ($)", "Costo Unit. ($)", "Contribución Unit. ($)"],
+    markers=True, # ¡Esto es lo que hace que aparezca un punto por mes!
+    title="📈 Evolución de Valores Unitarios por Mes",
+    labels={
+        "value": "Monto Unitario ($)",
+        "variable": "Métrica",
+        "Mes": "Período"
+    },
+    color_discrete_map={
+        "Facturación Unit. ($)": "#4ADE80",   # Verde
+        "Costo Unit. ($)": "#FBBF24",         # Amarillo/Naranja
+        "Contribución Unit. ($)": "#38BDF8"   # Celeste
+    }
+)
 
-    df_trend = df_trend.dropna(subset=["Periodo_Orden"])
+# 4. Ajustes visuales de la gráfica
+fig_tendencia.update_layout(
+    hovermode="x unified",
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1,
+        title=None
+    ),
+    xaxis=dict(showgrid=False),
+    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)", tickprefix="$")
+)
 
-    if not df_trend.empty and df_trend["Volumen"].sum() > 0:
-        df_trend["Facturacion_Unitaria"] = df_trend.apply(
-            lambda r: (r["Facturacion_Neta"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
-        )
-        df_trend["Costo_Unitario"] = df_trend.apply(
-            lambda r: (r["Costo_Total"] / r["Volumen"]) if r["Volumen"] > 0 else 0.0, axis=1
-        )
-        df_trend["CM_Unitaria"] = df_trend["Facturacion_Unitaria"] - df_trend["Costo_Unitario"]
-
-        base_fact = df_trend["Facturacion_Unitaria"].iloc[0]
-        base_costo = df_trend["Costo_Unitario"].iloc[0]
-        base_cm = df_trend["CM_Unitaria"].iloc[0]
-
-        df_trend["% Var Facturación Unit."] = (
-            ((df_trend["Facturacion_Unitaria"] - base_fact) / base_fact * 100) if base_fact > 0 else 0.0
-        )
-        df_trend["% Var Costo Unit."] = (
-            ((df_trend["Costo_Unitario"] - base_costo) / base_costo * 100) if base_costo > 0 else 0.0
-        )
-        df_trend["% Var Contribución Marg."] = (
-            ((df_trend["CM_Unitaria"] - base_cm) / base_cm * 100) if base_cm > 0 else 0.0
-        )
-
-        df_plot = df_trend.melt(
-            id_vars=["Mes_Label"],
-            value_vars=["% Var Facturación Unit.", "% Var Costo Unit.", "% Var Contribución Marg."],
-            var_name="Métrica",
-            value_name="Variación_Pct",
-        )
-
-        fig_evolucion = px.line(
-            df_plot,
-            x="Mes_Label",
-            y="Variación_Pct",
-            color="Métrica",
-            markers=True,
-            title="Comparativo de Tendencias: % de Incremento vs. Período Base",
-            template="plotly_dark",
-            color_discrete_map={
-                "% Var Facturación Unit.": "#4ADE80",
-                "% Var Costo Unit.": "#FBBF24",
-                "% Var Contribución Marg.": "#38BDF8",
-            },
-        )
-
-        fig_evolucion.update_xaxes(type="category")
-        fig_evolucion.update_traces(
-            line=dict(width=3),
-            marker=dict(size=8),
-            hovertemplate="%{y:+.2f}%",
-        )
-        fig_evolucion.update_layout(
-            paper_bgcolor="#0B0E14",
-            plot_bgcolor="#0B0E14",
-            height=420,
-            margin=dict(l=10, r=20, t=45, b=10),
-            xaxis_title="",
-            yaxis_title="% Variación Acumulada",
-            yaxis=dict(ticksuffix="%"),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1,
-                title_text="",
-            ),
-        )
-
-        st.plotly_chart(fig_evolucion, config=plotly_config)
-    else:
-        st.info("ℹ️ No hay suficiente historial temporal para calcular la evolución porcentual.")
+# 5. Mostrar en Streamlit
+st.plotly_chart(fig_tendencia, use_container_width=True)
 
     # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
