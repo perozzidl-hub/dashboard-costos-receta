@@ -769,10 +769,25 @@ elif vista == "📊 Contribuciones y Desperdicio":
     # ---------------------------------------------------------
     st.sidebar.divider()
     st.sidebar.header("🔮 Simulación 'What-If'")
-    
-    var_fact = st.sidebar.slider("Var. Facturación (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
-    var_receta = st.sidebar.slider("Var. Costo Receta (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
-    var_desperdicio = st.sidebar.slider("Var. Desperdicio (%)", min_value=-50.0, max_value=50.0, value=0.0, step=1.0)
+
+    # Inicializar estado de sliders si no existen
+    if "var_fact" not in st.session_state:
+        st.session_state["var_fact"] = 0.0
+    if "var_receta" not in st.session_state:
+        st.session_state["var_receta"] = 0.0
+    if "var_desperdicio" not in st.session_state:
+        st.session_state["var_desperdicio"] = 0.0
+
+    # Botón para volver a valores base (0%)
+    if st.sidebar.button("🔄 Restablecer Escenario Base", use_container_width=True):
+        st.session_state["var_fact"] = 0.0
+        st.session_state["var_receta"] = 0.0
+        st.session_state["var_desperdicio"] = 0.0
+        st.rerun()
+
+    var_fact = st.sidebar.slider("Var. Facturación (%)", min_value=-50.0, max_value=50.0, step=1.0, key="var_fact")
+    var_receta = st.sidebar.slider("Var. Costo Receta (%)", min_value=-50.0, max_value=50.0, step=1.0, key="var_receta")
+    var_desperdicio = st.sidebar.slider("Var. Desperdicio (%)", min_value=-50.0, max_value=50.0, step=1.0, key="var_desperdicio")
 
     # Filtrar por el producto seleccionado si no es "TODOS"
     df_ventas_vista = df_ventas_filt.copy()
@@ -805,7 +820,7 @@ elif vista == "📊 Contribuciones y Desperdicio":
     else:
         receta_summary = pd.DataFrame(columns=["Cod. Venta", "Costo_Teorico_Unitario"])
 
-    # 2. Agrupar Ventas (por Producto si es vista general, o por Locación si es comparativo)
+    # 2. Agrupar Ventas
     group_cols = ["LOCACION - SAP", "Cod. Venta", col_nom, "Tipo_Producto"] if comparar_por_locacion else ["Cod. Venta", col_nom, "Tipo_Producto"]
 
     ventas_contrib = (
@@ -839,7 +854,6 @@ elif vista == "📊 Contribuciones y Desperdicio":
     df_contrib["Costo_Teorico_Unit"] = df_contrib["Costo_Teorico_Unit_Base"] * (1 + var_receta / 100.0)
     df_contrib["Desperdicio_Unit"] = df_contrib["Desperdicio_Unit_Base"] * (1 + var_desperdicio / 100.0)
     
-    # Recalcular Costo Real Unitario = Nuevo Costo Receta + Nuevo Desperdicio
     df_contrib["Costo_Real_Unit"] = df_contrib["Costo_Teorico_Unit"] + df_contrib["Desperdicio_Unit"]
 
     # Totales y Márgenes Simulados
@@ -919,7 +933,6 @@ elif vista == "📊 Contribuciones y Desperdicio":
     col_export = df_contrib[select_cols].copy()
     col_export.columns = col_names
 
-    # Funciones de estilo
     def highlight_desperdicio(val):
         if isinstance(val, (int, float)):
             if val > 0:
@@ -957,7 +970,6 @@ elif vista == "📊 Contribuciones y Desperdicio":
 
     st.dataframe(styled_df, use_container_width=True, height=520)
 
-    # Descarga de datos
     st.download_button(
         label="📥 Descargar Reporte en Excel",
         data=col_export.to_csv(index=False).encode('utf-8'),
