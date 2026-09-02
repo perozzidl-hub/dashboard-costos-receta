@@ -567,21 +567,55 @@ if vista == "🔎 Análisis por Producto":
 
     else:
         st.info("ℹ️ No hay suficiente historial temporal para calcular la evolución de valores unitarios.")
-    # ---------------------------------------------------------
+   # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
     # ---------------------------------------------------------
     receta_prod = receta_precios[receta_precios["Cod. Venta"] == cod_art].copy() if not receta_precios.empty else pd.DataFrame()
-
+    
     if tipo_prod == "P" and not receta_prod.empty:
         st.markdown("### 📊 Composición de Insumos e Importes Totales")
-        total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
-        col_g1, col_g2 = st.columns([3, 2])
+        
+        # 1. Calculamos el Costo Teórico sumando los insumos
+        costo_teorico_unit = receta_prod["Costo Insumo ($)"].sum()
+        
+        # 2. Calculamos el Desperdicio (Costo Real - Costo Teórico)
+        # Usamos 'costo_unitario_real' que ya calculaste arriba en la sección de KPIs
+        desperdicio_unit = costo_unitario_real - costo_teorico_unit
+        
+        # Evitamos desperdicios negativos visuales si el costo teórico supera al real
+        if desperdicio_unit < 0:
+            desperdicio_unit = 0.0
+            
+        # 3. Si hay desperdicio, lo inyectamos como un insumo más
+        if desperdicio_unit > 0:
+            fila_desperdicio = pd.DataFrame([{
+                "Cod. Venta": cod_art,
+                "Código Insumo": "DESP-001",
+                "Descripción": "🚨 DESPERDICIO / DESVÍO",
+                "Cant. Teorica": 0.0,
+                "Precio Compra": desperdicio_unit,
+                "Costo Insumo ($)": desperdicio_unit
+            }])
+            receta_prod = pd.concat([receta_prod, fila_desperdicio], ignore_index=True)
 
+        # 4. Ahora el total contempla los insumos + el desperdicio
+        total_costo_grafico = receta_prod["Costo Insumo ($)"].sum()
+        
+        col_g1, col_g2 = st.columns([3, 2])
         df_sorted_desc = receta_prod.sort_values("Costo Insumo ($)", ascending=False).copy()
         df_sorted_desc["Insumo_Label"] = df_sorted_desc["Descripción"].apply(lambda x: truncate_text(x, 26))
-
+        
         insumos_unicos = df_sorted_desc["Insumo_Label"].tolist()
-        mapa_colores = {insumo: PALETA_COLORES[i % len(PALETA_COLORES)] for i, insumo in enumerate(insumos_unicos)}
+        
+        # 5. Asignación inteligente de colores (El desperdicio siempre en rojo)
+        mapa_colores = {}
+        idx_color = 0
+        for insumo in insumos_unicos:
+            if "DESPERDICIO" in str(insumo).upper():
+                mapa_colores[insumo] = "#F43F5E" # Rojo Alerta
+            else:
+                mapa_colores[insumo] = PALETA_COLORES[idx_color % len(PALETA_COLORES)]
+                idx_color += 1
 
         with col_g1:
             fig_bar = px.bar(
@@ -607,7 +641,7 @@ if vista == "🔎 Análisis por Producto":
                 yaxis_title="",
             )
             st.plotly_chart(fig_bar, config=plotly_config)
-
+            
         with col_g2:
             fig_pie = px.pie(
                 df_sorted_desc,
@@ -625,7 +659,7 @@ if vista == "🔎 Análisis por Producto":
                 insidetextfont=dict(color="#0F172A", size=16, family="Arial Black"),
             )
             fig_pie.add_annotation(
-                text=f"<b>Total</b><br>${total_costo_grafico:,.2f}",
+                text=f"<b>Total Real</b><br>${total_costo_grafico:,.2f}",
                 x=0.5,
                 y=0.5,
                 font_size=13,
@@ -640,42 +674,47 @@ if vista == "🔎 Análisis por Producto":
                 plot_bgcolor="#0B0E14",
             )
             st.plotly_chart(fig_pie, config=plotly_config)
-
+            
         st.divider()
-
+        
         st.markdown("### 📋 Desglose de Receta (BOM) con Totales")
-
         tabla_out = receta_prod[
             ["Código Insumo", "Descripción", "Cant. Teorica", "Precio Compra", "Costo Insumo ($)"]
         ].copy()
-
+        
         tabla_out["% Part."] = (
             (tabla_out["Costo Insumo ($)"] / total_costo_grafico * 100) if total_costo_grafico > 0 else 0.0
         )
         tabla_out.columns = [
             "Cód. Insumo", "Insumo", "Cant. Teórica", "Precio Unit. ($)", "Costo ($)", "% Participación",
         ]
-
+        
         tabla_out_formatted = tabla_out.copy()
-        tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted["Cant. Teórica"].apply(lambda x: f"{x:,.4f}")
+        
+        # Formateamos evitando errores si Cant. Teórica llega como string (ej: '-')
+        def formato_cant(x):
+            try: return f"{float(x):,.4f}"
+            except: return str(x)
+            
+        tabla_out_formatted["Cant. Teórica"] = tabla_out_formatted["Cant. Teórica"].apply(formato_cant)
         tabla_out_formatted["Precio Unit. ($)"] = tabla_out_formatted["Precio Unit. ($)"].apply(lambda x: f"${x:,.2f}")
         tabla_out_formatted["Costo ($)"] = tabla_out_formatted["Costo ($)"].apply(lambda x: f"${x:,.2f}")
         tabla_out_formatted["% Participación"] = tabla_out_formatted["% Participación"].apply(lambda x: f"{x:.1f}%")
-
+        
         fila_total = pd.DataFrame([{
             "Cód. Insumo": "TOTAL",
-            "Insumo": "SUMATORIA TOTAL RECURSOS",
+            "Insumo": "SUMATORIA TOTAL RECURSOS + DESVÍOS",
             "Cant. Teórica": "-",
             "Precio Unit. ($)": "-",
             "Costo ($)": f"${total_costo_grafico:,.2f}",
             "% Participación": "100.0%",
         }])
-
+        
         tabla_final = pd.concat([tabla_out_formatted, fila_total], ignore_index=True)
         st.table(tabla_final)
+        
     else:
         st.info("ℹ️ **Producto de Reventa (R)**: El costo total proviene directamente de la columna **TOTAL PRODUCTO TERCEROS** en el registro de ventas.")
-
 elif vista == "🌐 Visión General de Compañía":
     # ---------------------------------------------------------
     # VISTA GENERAL DE COMPAÑÍA
