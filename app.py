@@ -428,63 +428,114 @@ if vista == "🔎 Análisis por Producto":
 
     st.divider()
 
- import plotly.express as px
+# ---------------------------------------------------------
+    # EVOLUCIÓN TEMPORAL UNITARIA ($)
+    # ---------------------------------------------------------
+    st.markdown("### 📈 Evolución de Valores Unitarios por Mes ($)")
 
-# 1. Agrupar la información por Mes (asegúrate de que "Mes" sea tu columna de tiempo)
-# Asumiendo que df_prod_seleccionado es tu DataFrame filtrado por el producto actual
-df_tendencia = df_prod_seleccionado.groupby("Mes").agg(
-    Volumen=("Físicos", "sum"),
-    Facturacion=("Facturación Neta", "sum"),
-    Costo_Real=("COSTO_TOTAL_REAL", "sum")
-).reset_index()
+    df_hist = (
+        df_ventas[df_ventas["Cod. Venta"] == cod_art].copy()
+        if cod_art != "TODOS"
+        else df_ventas.copy()
+    )
+    if locacion_seleccionada != "Todas las Locaciones":
+        df_hist = df_hist[df_hist["LOCACION - SAP"] == locacion_seleccionada]
 
-# 2. Calcular los valores unitarios absolutos
-df_tendencia["Facturación Unit. ($)"] = df_tendencia.apply(
-    lambda r: r["Facturacion"] / r["Volumen"] if r["Volumen"] > 0 else 0, axis=1
-)
-df_tendencia["Costo Unit. ($)"] = df_tendencia.apply(
-    lambda r: r["Costo_Real"] / r["Volumen"] if r["Volumen"] > 0 else 0, axis=1
-)
-df_tendencia["Contribución Unit. ($)"] = df_tendencia["Facturación Unit. ($)"] - df_tendencia["Costo Unit. ($)"]
+    if "FECHA" in df_hist.columns:
+        df_hist["FECHA"] = pd.to_datetime(df_hist["FECHA"], errors="coerce")
+        df_hist["Periodo_Orden"] = df_hist["FECHA"].dt.to_period("M")
+        df_hist["Mes_Label"] = df_hist["FECHA"].dt.strftime("%b%y").str.lower()
+    else:
+        df_hist["Periodo_Orden"] = df_hist["Mes_Venta"]
+        df_hist["Mes_Label"] = df_hist["Mes_Venta"]
 
-# 3. Crear el gráfico de líneas con puntos (markers=True)
-fig_tendencia = px.line(
-    df_tendencia,
-    x="Mes",
-    y=["Facturación Unit. ($)", "Costo Unit. ($)", "Contribución Unit. ($)"],
-    markers=True, # ¡Esto es lo que hace que aparezca un punto por mes!
-    title="📈 Evolución de Valores Unitarios por Mes",
-    labels={
-        "value": "Monto Unitario ($)",
-        "variable": "Métrica",
-        "Mes": "Período"
-    },
-    color_discrete_map={
-        "Facturación Unit. ($)": "#4ADE80",   # Verde
-        "Costo Unit. ($)": "#FBBF24",         # Amarillo/Naranja
-        "Contribución Unit. ($)": "#38BDF8"   # Celeste
-    }
-)
+    df_trend = (
+        df_hist.groupby(["Periodo_Orden", "Mes_Label"])
+        .agg(
+            Volumen=("Físicos", "sum"),
+            Facturacion_Neta=("Facturación Neta", "sum"),
+            Costo_Total=("COSTO_TOTAL_REAL", "sum"),
+        )
+        .reset_index()
+        .sort_values("Periodo_Orden")
+    )
 
-# 4. Ajustes visuales de la gráfica
-fig_tendencia.update_layout(
-    hovermode="x unified",
-    plot_bgcolor="rgba(0,0,0,0)",
-    paper_bgcolor="rgba(0,0,0,0)",
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="right",
-        x=1,
-        title=None
-    ),
-    xaxis=dict(showgrid=False),
-    yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.1)", tickprefix="$")
-)
+    df_trend = df_trend.dropna(subset=["Periodo_Orden"])
 
-# 5. Mostrar en Streamlit
-st.plotly_chart(fig_tendencia, use_container_width=True)
+    if not df_trend.empty and df_trend["Volumen"].sum() > 0:
+        # Cálculo de valores absolutos unitarios en pesos
+        df_trend["Facturación Unit. ($)"] = df_trend.apply(
+            lambda r: (r["Facturacion_Neta"] / r["Volumen"])
+            if r["Volumen"] > 0
+            else 0.0,
+            axis=1,
+        )
+        df_trend["Costo Unit. ($)"] = df_trend.apply(
+            lambda r: (r["Costo_Total"] / r["Volumen"])
+            if r["Volumen"] > 0
+            else 0.0,
+            axis=1,
+        )
+        df_trend["Contribución Marg. Unit. ($)"] = (
+            df_trend["Facturación Unit. ($)"] - df_trend["Costo Unit. ($)"]
+        )
+
+        # Reestructuración para Plotly
+        df_plot = df_trend.melt(
+            id_vars=["Mes_Label"],
+            value_vars=[
+                "Facturación Unit. ($)",
+                "Costo Unit. ($)",
+                "Contribución Marg. Unit. ($)",
+            ],
+            var_name="Métrica",
+            value_name="Monto_Unitario",
+        )
+
+        fig_evolucion = px.line(
+            df_plot,
+            x="Mes_Label",
+            y="Monto_Unitario",
+            color="Métrica",
+            markers=True,
+            title="Comparativo de Tendencias: Montos Unitarios ($) por Período",
+            template="plotly_dark",
+            color_discrete_map={
+                "Facturación Unit. ($)": "#4ADE80",
+                "Costo Unit. ($)": "#FBBF24",
+                "Contribución Marg. Unit. ($)": "#38BDF8",
+            },
+        )
+
+        fig_evolucion.update_xaxes(type="category")
+        fig_evolucion.update_traces(
+            line=dict(width=3),
+            marker=dict(size=8),
+            hovertemplate="$%{y:,.2f}",
+        )
+        fig_evolucion.update_layout(
+            paper_bgcolor="#0B0E14",
+            plot_bgcolor="#0B0E14",
+            height=420,
+            margin=dict(l=10, r=20, t=45, b=10),
+            xaxis_title="",
+            yaxis_title="Monto Unitario ($)",
+            yaxis=dict(tickprefix="$"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                title_text="",
+            ),
+        )
+
+        st.plotly_chart(fig_evolucion, config=plotly_config)
+    else:
+        st.info(
+            "ℹ️ No hay suficiente historial temporal para calcular la evolución de valores unitarios."
+        )
 
     # ---------------------------------------------------------
     # COMPOSICIÓN Y TABLAS
